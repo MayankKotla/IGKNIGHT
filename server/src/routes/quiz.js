@@ -2,6 +2,7 @@ const express = require('express')
 const Anthropic = require('@anthropic-ai/sdk')
 const { createClient } = require('@supabase/supabase-js')
 const { requireAuth } = require('../middleware/auth')
+const { quizGenerateLimiter, aiUtilityLimiter } = require('../middleware/rateLimit')
 
 const router = express.Router()
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -15,7 +16,7 @@ function makeClient(token) {
 }
 
 // POST /api/quiz/generate — generate (or return existing) quiz for a session
-router.post('/generate', requireAuth, async (req, res) => {
+router.post('/generate', requireAuth, quizGenerateLimiter, async (req, res) => {
   const { session_id } = req.body
   if (!session_id) return res.status(400).json({ error: 'session_id required' })
 
@@ -95,7 +96,7 @@ router.post('/generate', requireAuth, async (req, res) => {
 })
 
 // POST /api/quiz/study-tip — personalized AI tip after completing a quiz
-router.post('/study-tip', requireAuth, async (req, res) => {
+router.post('/study-tip', requireAuth, aiUtilityLimiter, async (req, res) => {
   const { score, wrong_topics, course_name } = req.body
 
   if (!wrong_topics || wrong_topics.length === 0) {
@@ -119,7 +120,7 @@ router.post('/study-tip', requireAuth, async (req, res) => {
 })
 
 // GET /api/quiz/insights/:groupId — aggregated group KnightCheck stats + AI suggestion
-router.get('/insights/:groupId', requireAuth, async (req, res) => {
+router.get('/insights/:groupId', requireAuth, aiUtilityLimiter, async (req, res) => {
   const { groupId } = req.params
   const db = makeClient(req.token)
 

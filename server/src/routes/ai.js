@@ -1,6 +1,7 @@
 const express = require('express')
 const Anthropic = require('@anthropic-ai/sdk')
 const { requireAuth } = require('../middleware/auth')
+const { chatLimiter } = require('../middleware/rateLimit')
 
 const router = express.Router()
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -11,7 +12,7 @@ Help students understand concepts, work through problems, and prepare for exams.
 Keep responses clear and well-structured. You are speaking to UCF college students.
 When introducing yourself, say: "I'm RetAIn, your AI study assistant."`
 
-router.post('/chat', requireAuth, async (req, res) => {
+router.post('/chat', requireAuth, chatLimiter, async (req, res) => {
   const { message, history = [] } = req.body
 
   if (!message?.trim()) {
