@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -si \"https://search.reg.ucf.edu/api/courses?term=2258&subject=COP&limit=5\")",
+      "Bash(curl -si \"https://www.ucf.edu/academics/programs/undergraduate/\")",
+      "Bash(node -e \"process.stdout.write\\('start\\\\n'\\);\")",
+      "Read(//tmp/**)",
+      "Bash(node -e ' *)"
+    ]
+  }
+}

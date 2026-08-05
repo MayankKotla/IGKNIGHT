@@ -1,0 +1,191 @@
+-- UCF course seed — covers all major departments across every level
+-- Run after 001_schema.sql in the Supabase SQL Editor
+-- The free-entry flow in the app handles any course not listed here.
+
+INSERT INTO public.courses (code, name, department, credits) VALUES
+
+-- ─── English / Writing ────────────────────────────────────────────────
+('ENC 1101',  'Composition I',                                    'English', 3),
+('ENC 1102',  'Composition II',                                   'English', 3),
+('ENC 3241',  'Writing for the Technical Professional',           'English', 3),
+('ENC 3310',  'Advanced Expository Writing',                      'English', 3),
+('ENC 4260',  'Writing for the Digital Environment',              'English', 3),
+('ENL 3230',  'British Literature: Medieval to 1800',             'English', 3),
+('ENL 3232',  'British Literature: 1800 to Present',              'English', 3),
+('LIT 2000',  'Introduction to Literature',                       'English', 3),
+('LIT 3383',  'Literature and Science Fiction',                   'English', 3),
+('CRW 3110',  'Creative Writing: Fiction',                        'English', 3),
+
+-- ─── Mathematics ──────────────────────────────────────────────────────
+('MAC 1105',  'College Algebra',                                  'Mathematics', 3),
+('MAC 1114',  'Trigonometry',                                     'Mathematics', 3),
+('MAC 1140',  'Precalculus Algebra',                              'Mathematics', 3),
+('MAC 1147',  'Precalculus Algebra and Trigonometry',             'Mathematics', 4),
+('MAC 2311',  'Calculus with Analytic Geometry I',                'Mathematics', 4),
+('MAC 2312',  'Calculus with Analytic Geometry II',               'Mathematics', 4),
+('MAC 2313',  'Calculus with Analytic Geometry III',              'Mathematics', 4),
+('MAP 2302',  'Differential Equations',                           'Mathematics', 3),
+('MAD 2104',  'Discrete Mathematics',                             'Mathematics', 3),
+('MHF 3202',  'Sets and Logic',                                   'Mathematics', 3),
+('STA 2023',  'Statistical Methods I',                            'Statistics', 3),
+('STA 3024',  'Statistical Methods II',                           'Statistics', 3),
+('STA 3032',  'Applied Statistics for Engineers and Scientists',  'Statistics', 3),
+('STA 4321',  'Mathematical Statistics I',                        'Statistics', 3),
+
+-- ─── Computer Science ─────────────────────────────────────────────────
+('CGS 1060C', 'Introduction to Computing Technology',             'Computer Science', 3),
+('CGS 2100C', 'Computers in Business',                            'Computer Science', 3),
+('CGS 3269',  'Computer Architecture and Organization',          'Computer Science', 3),
+('COP 2250C', 'Java Programming',                                 'Computer Science', 3),
+('COP 3330',  'Object Oriented Programming',                      'Computer Science', 3),
+('COP 3402',  'Systems Software',                                 'Computer Science', 3),
+('COP 3502C', 'Computer Science I',                               'Computer Science', 3),
+('COP 3503C', 'Computer Science II',                              'Computer Science', 3),
+('COP 4020',  'Programming Languages',                            'Computer Science', 3),
+('COP 4331C', 'Object Oriented Processes',                        'Computer Science', 3),
+('COP 4600',  'Operating Systems',                                'Computer Science', 3),
+('COP 4710',  'Database Management Systems',                      'Computer Science', 3),
+('COT 3100',  'Introduction to Discrete Structures',              'Computer Science', 3),
+('COT 4210',  'Discrete Computational Structures',                'Computer Science', 3),
+('CDA 3103C', 'Computer Logic and Organization',                  'Computer Science', 3),
+('CAP 4612',  'Machine Learning',                                 'Computer Science', 3),
+('CAP 4630',  'Artificial Intelligence',                          'Computer Science', 3),
+('CAP 4640',  'Natural Language Processing',                      'Computer Science', 3),
+('CNT 4504',  'Computer Networks',                                'Computer Science', 3),
+('CIS 3360',  'Security in Computing',                            'Computer Science', 3),
+('CEN 4010',  'Software Engineering',                             'Computer Science', 3),
+
+-- ─── Engineering ─────────────────────────────────────────────────────
+('EGN 3310',  'Engineering Analysis — Statics',                   'Engineering', 3),
+('EGN 3321',  'Engineering Analysis — Dynamics',                  'Engineering', 3),
+('EGN 3343',  'Thermodynamics',                                   'Engineering', 3),
+('EGN 3365',  'Materials and Processes',                          'Engineering', 3),
+('EEL 3123',  'Circuits I',                                       'Electrical Engineering', 3),
+('EEL 3124',  'Circuits II',                                      'Electrical Engineering', 3),
+('EEL 4742',  'Embedded Systems',                                 'Electrical Engineering', 3),
+('EEL 4835C', 'Computer Engineering Design',                      'Electrical Engineering', 3),
+('EML 3004C', 'Introduction to Mechanical Engineering',           'Engineering', 3),
+('EML 4312',  'Feedback Control Systems',                         'Engineering', 3),
+('BCN 1001',  'Introduction to Construction',                     'Construction Management', 3),
+('BCN 3730',  'Construction Estimating',                          'Construction Management', 3),
+
+-- ─── Natural Sciences ─────────────────────────────────────────────────
+('BSC 1005',  'Biological Principles',                            'Biology', 3),
+('BSC 1010C', 'Biology I',                                        'Biology', 4),
+('BSC 1011C', 'Biology II',                                       'Biology', 4),
+('BSC 2010',  'Integrated Principles of Biology I',               'Biology', 3),
+('BSC 2011',  'Integrated Principles of Biology II',              'Biology', 3),
+('CHM 2045',  'Chemistry Fundamentals I',                         'Chemistry', 3),
+('CHM 2045L', 'Chemistry Fundamentals I Laboratory',              'Chemistry', 1),
+('CHM 2046',  'Chemistry Fundamentals II',                        'Chemistry', 3),
+('CHM 2046L', 'Chemistry Fundamentals II Laboratory',             'Chemistry', 1),
+('CHM 3120',  'Organic Chemistry I',                              'Chemistry', 3),
+('CHM 3121',  'Organic Chemistry II',                             'Chemistry', 3),
+('PHY 2048',  'Physics for Engineers and Scientists I',           'Physics', 3),
+('PHY 2048L', 'Physics for Engineers and Scientists I Lab',       'Physics', 1),
+('PHY 2049',  'Physics for Engineers and Scientists II',          'Physics', 3),
+('PHY 2049L', 'Physics for Engineers and Scientists II Lab',      'Physics', 1),
+('PHY 2053',  'Physics I',                                        'Physics', 3),
+('PHY 2054',  'Physics II',                                       'Physics', 3),
+('PCB 3023',  'Cell Biology',                                     'Biology', 3),
+('PCB 4233',  'Genetics',                                         'Biology', 3),
+('MCB 3020C', 'Microbiology',                                     'Biology', 4),
+('ZOO 3733C', 'Human Anatomy',                                    'Biology', 4),
+('AST 2002',  'Exploring the Universe',                           'Astronomy', 3),
+('GLY 2010',  'Physical Geology',                                 'Geology', 3),
+('EVR 1001',  'Introduction to Environmental Science',            'Environmental Studies', 3),
+
+-- ─── Psychology & Social Sciences ────────────────────────────────────
+('PSY 2012',  'General Psychology',                               'Psychology', 3),
+('PSY 3204',  'Behavioral Statistics',                            'Psychology', 3),
+('PSY 3213C', 'Research Methods in Psychology',                   'Psychology', 3),
+('PSY 4604',  'Abnormal Psychology',                              'Psychology', 3),
+('SOP 3004',  'Social Psychology',                                'Psychology', 3),
+('DEP 3053',  'Developmental Psychology',                         'Psychology', 3),
+('SYG 2000',  'Introduction to Sociology',                        'Sociology', 3),
+('ANT 2000',  'General Anthropology',                             'Anthropology', 3),
+('CCJ 3024',  'Introduction to Criminal Justice',                 'Criminal Justice', 3),
+('CCJ 4620',  'Criminology',                                      'Criminal Justice', 3),
+
+-- ─── History & Political Science ──────────────────────────────────────
+('AMH 2010',  'United States History to 1877',                    'History', 3),
+('AMH 2020',  'United States History since 1877',                 'History', 3),
+('WOH 2012',  'World History to 1500',                            'History', 3),
+('WOH 2022',  'World History since 1500',                         'History', 3),
+('EUH 3120',  'Early Modern Europe',                              'History', 3),
+('POS 2041',  'American National Government',                     'Political Science', 3),
+('CPO 2002',  'Comparative Government',                           'Political Science', 3),
+('INR 2002',  'Introduction to International Relations',          'Political Science', 3),
+('PUL 3323',  'Public Administration',                            'Political Science', 3),
+
+-- ─── Economics & Business ─────────────────────────────────────────────
+('ECO 2013',  'Principles of Macroeconomics',                     'Economics', 3),
+('ECO 2023',  'Principles of Microeconomics',                     'Economics', 3),
+('ECO 3020',  'Intermediate Macroeconomics',                      'Economics', 3),
+('ECO 3101',  'Intermediate Microeconomics',                      'Economics', 3),
+('ACG 2021',  'Financial Accounting',                             'Accounting', 3),
+('ACG 2071',  'Managerial Accounting',                            'Accounting', 3),
+('ACG 3073',  'Accounting Information Systems',                   'Accounting', 3),
+('ACG 4111',  'Intermediate Financial Accounting I',              'Accounting', 3),
+('FIN 3403',  'Business Finance',                                 'Finance', 3),
+('FIN 4464',  'Investments',                                      'Finance', 3),
+('MAN 3025',  'Principles of Management',                         'Management', 3),
+('MAN 4720',  'Business Strategy and Policy',                     'Management', 3),
+('MAR 3023',  'Basic Marketing',                                  'Marketing', 3),
+('MAR 4156',  'International Marketing',                          'Marketing', 3),
+('GEB 3213',  'Business Communications',                          'Management', 3),
+('REE 3043',  'Real Estate Principles',                           'Real Estate', 3),
+
+-- ─── Health & Kinesiology ──────────────────────────────────────────────
+('HUN 2201',  'Fundamentals of Human Nutrition',                  'Health Sciences', 3),
+('HSC 4234',  'Epidemiology and Community Health',                'Health Sciences', 3),
+('APK 2100C', 'Anatomy and Physiology I',                         'Health Sciences', 4),
+('APK 2105C', 'Anatomy and Physiology II',                        'Health Sciences', 4),
+('APK 3111C', 'Exercise Physiology',                              'Health Sciences', 3),
+('HSC 4592',  'Public Health Administration',                     'Health Sciences', 3),
+
+-- ─── Communication ────────────────────────────────────────────────────
+('SPC 1608',  'Fundamentals of Oral Communication',               'Communication', 3),
+('MMC 2100',  'Introduction to Mass Communication',               'Communication', 3),
+('MMC 4200',  'Mass Media Law',                                   'Communication', 3),
+('JOU 3101',  'News Reporting and Writing',                       'Journalism', 3),
+('JOU 4420',  'Feature Writing',                                  'Journalism', 3),
+('RTV 3300',  'Electronic Media',                                 'Communication', 3),
+('RTV 4410',  'Television Producing',                             'Communication', 3),
+('ADV 3000',  'Principles of Advertising',                        'Advertising', 3),
+('PUR 3000',  'Principles of Public Relations',                   'Communication', 3),
+
+-- ─── Philosophy & Humanities ─────────────────────────────────────────
+('PHI 2010',  'Introduction to Philosophy',                       'Philosophy', 3),
+('PHI 2630',  'Introduction to Ethics',                           'Philosophy', 3),
+('REL 2300',  'World Religions',                                  'Religious Studies', 3),
+('HUM 2020',  'Introduction to the Humanities',                   'Humanities', 3),
+('IDS 2891',  'Interdisciplinary Seminar',                        'Interdisciplinary', 3),
+
+-- ─── Modern Languages ─────────────────────────────────────────────────
+('SPA 1120',  'Spanish I',                                        'Spanish', 4),
+('SPA 1121',  'Spanish II',                                       'Spanish', 4),
+('SPA 2220',  'Spanish III',                                      'Spanish', 3),
+('FRE 1120',  'French I',                                         'French', 4),
+('FRE 1121',  'French II',                                        'French', 4),
+('ITA 1120',  'Italian I',                                        'Italian', 4),
+
+-- ─── Digital Media & Film ────────────────────────────────────────────
+('DIG 2000',  'Introduction to Digital Media',                    'Digital Media', 3),
+('DIG 3134',  'Digital Media Production I',                       'Digital Media', 3),
+('DIG 4157',  'Digital Media Production II',                      'Digital Media', 3),
+('FIL 2000',  'Film and Society',                                 'Film', 3),
+('THE 2000',  'Introduction to Theatre',                          'Theatre', 3),
+('MUL 2010',  'Introduction to Music',                            'Music', 3),
+('ARC 2201',  'Architectural Design I',                           'Architecture', 4),
+('ARH 2050',  'Introduction to Art History',                      'Art History', 3),
+
+-- ─── Hospitality & Tourism ────────────────────────────────────────────
+('HMG 2120',  'Introduction to Hospitality Management',          'Hospitality', 3),
+('HMG 3204',  'Food and Beverage Management',                     'Hospitality', 3),
+('HMG 4246',  'Hotel Management',                                 'Hospitality', 3)
+
+ON CONFLICT (code) DO UPDATE SET
+  name       = EXCLUDED.name,
+  department = EXCLUDED.department,
+  credits    = EXCLUDED.credits;
