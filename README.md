@@ -28,11 +28,11 @@ IgKnight connects UCF Knights through realtime study groups, session scheduling,
 # Install dependencies
 npm install
 
-# Start both client (port 5173) and server (port 3001)
-npm run dev
+# Set up env files (see below), then:
+npm run dev   # starts both client (port 5173) and server (port 3001)
 ```
 
-Requires `.env` files in `/server` with `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, and `GOOGLE_REFRESH_TOKEN`.
+Copy `client/.env.example` → `client/.env` and `server/.env.example` → `server/.env`, then fill in real values. See the comments in each file for where to get them (Supabase dashboard, Anthropic console, Google Cloud console) and what changes for a production deploy.
 
 ## UCF Email Enforcement
 
