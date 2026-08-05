@@ -23,6 +23,18 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid session_type' })
   }
 
+  // This route uses the service-role client (bypasses RLS), so membership
+  // must be checked explicitly — otherwise any authenticated user could
+  // create a session in a group they don't belong to.
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', group_id)
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!membership) return res.status(403).json({ error: 'Not a group member' })
+
   let meeting_url = null
   let meet_link_failed = false
 
@@ -165,6 +177,20 @@ router.post('/:sessionId/notes', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Note must be at least 10 characters' })
   }
 
+  const { data: session } = await supabase
+    .from('sessions').select('group_id').eq('id', sessionId).single()
+
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', session.group_id)
+    .eq('user_id', req.user.id)
+    .maybeSingle()
+
+  if (!membership) return res.status(403).json({ error: 'Not a group member' })
+
   const { data: note, error } = await supabase
     .from('session_notes')
     .insert({ session_id: sessionId, user_id: req.user.id, content: content.trim() })
@@ -223,15 +249,31 @@ router.get('/:sessionId/uploads', requireAuth, async (req, res) => {
 // POST /:sessionId/uploads — save metadata after Supabase Storage upload
 router.post('/:sessionId/uploads', requireAuth, async (req, res) => {
   const { sessionId } = req.params
-  const { group_id, file_name, file_size, file_type, storage_path } = req.body
+  const { file_name, file_size, file_type, storage_path } = req.body
 
-  if (!group_id || !file_name || !file_size || !file_type || !storage_path) {
+  if (!file_name || !file_size || !file_type || !storage_path) {
     return res.status(400).json({ error: 'Missing required fields' })
   }
 
+  const { data: session } = await supabase
+    .from('sessions').select('group_id').eq('id', sessionId).single()
+
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', session.group_id)
+    .eq('user_id', req.user.id)
+    .maybeSingle()
+
+  if (!membership) return res.status(403).json({ error: 'Not a group member' })
+
+  // group_id is derived from the session itself, not trusted from the
+  // client, so an upload can't be mis-tagged to a different group.
   const { data: upload, error } = await supabase
     .from('session_uploads')
-    .insert({ session_id: sessionId, group_id, user_id: req.user.id, file_name, file_size, file_type, storage_path })
+    .insert({ session_id: sessionId, group_id: session.group_id, user_id: req.user.id, file_name, file_size, file_type, storage_path })
     .select('*, users(full_name, email)')
     .single()
 
