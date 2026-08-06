@@ -395,35 +395,44 @@ export default function Landing() {
             opacity: heroOpacity,
             scale: heroScale,
             y: heroY,
-            rotateX,
-            rotateY,
-            transformPerspective: 1000,
-            transformStyle: 'preserve-3d',
           }}
           className="max-w-4xl mx-auto relative z-10"
         >
           <motion.div initial="hidden" animate="visible" variants={heroContainer} style={{ transformStyle: 'preserve-3d' }}>
+            {/* Tilt is applied here, around the badge/headline/subtext only —
+                not around the buttons below. The buttons used to sit inside
+                this tilted layer too, and hovering one nudged the mouse
+                position, which nudged the tilt, which shifted the button
+                out from under the cursor, dropping the hover, un-tilting,
+                and re-triggering it — a rapid flicker loop. Keeping
+                interactive elements out of anything that reacts to hovering
+                them avoids that feedback entirely. */}
             <motion.div
-              variants={fadeUp}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-              className="inline-flex items-center gap-2 bg-ucf-gold/10 border border-ucf-gold/20 rounded-full px-4 py-1.5 mb-8"
+              style={{ rotateX, rotateY, transformPerspective: 1000, transformStyle: 'preserve-3d' }}
             >
-              <span className="w-2 h-2 rounded-full bg-ucf-gold animate-pulse" />
-              <span className="text-ucf-gold text-sm font-medium">Exclusive to UCF Knights</span>
+              <motion.div
+                variants={fadeUp}
+                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                className="inline-flex items-center gap-2 bg-ucf-gold/10 border border-ucf-gold/20 rounded-full px-4 py-1.5 mb-8"
+              >
+                <span className="w-2 h-2 rounded-full bg-ucf-gold animate-pulse" />
+                <span className="text-ucf-gold text-sm font-medium">Exclusive to UCF Knights</span>
+              </motion.div>
+
+              <motion.div variants={fadeUp} transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }} style={{ transformStyle: 'preserve-3d' }}>
+                <ExtrudedHeadline />
+              </motion.div>
+
+              <motion.p
+                variants={fadeUp}
+                transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+                className="text-lg text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed"
+              >
+                IgKnight connects UCF students through AI-powered study groups, realtime collaboration,
+                and an AI tutor that never sleeps.
+              </motion.p>
             </motion.div>
 
-            <motion.div variants={fadeUp} transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }} style={{ transformStyle: 'preserve-3d' }}>
-              <ExtrudedHeadline />
-            </motion.div>
-
-            <motion.p
-              variants={fadeUp}
-              transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-              className="text-lg text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed"
-            >
-              IgKnight connects UCF students through AI-powered study groups, realtime collaboration,
-              and an AI tutor that never sleeps.
-            </motion.p>
             <motion.div
               variants={fadeUp}
               transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
