@@ -1,4 +1,4 @@
-import React, { useRef } from 'react'
+import React, { useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, useScroll, useTransform, useMotionValue, useSpring, useMotionTemplate } from 'framer-motion'
 import { BookOpen, Users, Brain, Calendar, MessageSquare, Shield, ArrowRight, ChevronRight } from 'lucide-react'
@@ -281,6 +281,27 @@ export default function Landing() {
   const lightPosX = useMotionTemplate`calc(${pathX}vw + ${lightTranslateX}px)`
   const lightPosY = useTransform([pathY, lightTranslateY], ([a, b]) => a + b)
 
+  // Scroll-snap is opt-in per element via scroll-snap-align, but the
+  // snap-type itself has to live on the actual scrolling element — which
+  // for a normal-flow page is <html>, not any div in this component. Set
+  // it only while Landing is mounted so other routes are unaffected.
+  // "mandatory" reliably locks to the nearest snap point once a scroll
+  // gesture ends, rather than "proximity"'s barely-noticeable nudge.
+  // scroll-behavior: smooth is what actually makes that lock feel like a
+  // gentle glide into place instead of an instant jump-cut — that jump-cut
+  // is what read as "violent."
+  useEffect(() => {
+    const root = document.documentElement
+    const previousSnap = root.style.scrollSnapType
+    const previousBehavior = root.style.scrollBehavior
+    root.style.scrollSnapType = 'y mandatory'
+    root.style.scrollBehavior = 'smooth'
+    return () => {
+      root.style.scrollSnapType = previousSnap
+      root.style.scrollBehavior = previousBehavior
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-app-bg overflow-x-hidden">
       <Navbar />
@@ -432,7 +453,11 @@ export default function Landing() {
       {/* Spacer — holds the hero's place in normal document flow (the hero
           itself is fixed and takes no flow space). Scrolling through this
           exact span is what drives the receding-wall transform above. */}
-      <div ref={heroTransitionRef} style={{ height: '100vh' }} aria-hidden="true" />
+      <div
+        ref={heroTransitionRef}
+        style={{ height: '100vh', scrollSnapAlign: 'start' }}
+        aria-hidden="true"
+      />
 
       {/* Everything below stacks above the fixed hero and opaquely covers it
           as it scrolls into place — that brief moment of overlap, where this
@@ -441,9 +466,15 @@ export default function Landing() {
       <div className="relative bg-app-bg" style={{ zIndex: 10 }}>
         <Divider />
 
-        {/* Features */}
-        <section className="py-24 px-10 -mx-4">
-          <div className="max-w-6xl mx-auto">
+        {/* Features — full-screen like the hero. scroll-snap-align pairs with
+            the document-level scroll-snap-type set above: once you're
+            scrolling near this section, it locks cleanly to fill the
+            screen instead of stopping mid-way through it. */}
+        <section
+          className="h-screen flex flex-col justify-center px-10"
+          style={{ scrollSnapAlign: 'start' }}
+        >
+          <div className="max-w-6xl mx-auto w-full">
             <motion.div
               className="text-center mb-14"
               initial="hidden"
@@ -475,7 +506,7 @@ export default function Landing() {
         <Divider />
 
         {/* How it works */}
-        <section className="py-24 px-10 -mx-4">
+        <section className="py-24 px-10 -mx-4" style={{ scrollSnapAlign: 'start' }}>
           <div className="max-w-4xl mx-auto">
             <motion.div
               className="text-center mb-14"
@@ -509,7 +540,7 @@ export default function Landing() {
         <Divider />
 
         {/* CTA */}
-        <section className="py-24 px-10 -mx-4">
+        <section className="py-24 px-10 -mx-4" style={{ scrollSnapAlign: 'start' }}>
           <div className="max-w-2xl mx-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.94 }}
@@ -547,6 +578,7 @@ export default function Landing() {
         {/* Footer */}
         <motion.footer
           className="py-8 px-10 -mx-4"
+          style={{ scrollSnapAlign: 'start' }}
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true, amount: 0.8 }}
