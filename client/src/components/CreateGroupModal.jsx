@@ -12,7 +12,7 @@ export default function CreateGroupModal({ onClose, onCreated }) {
   const [groupName, setGroupName] = useState('')
   const [professor, setProfessor] = useState('')
   const [description, setDescription] = useState('')
-  const [maxMembers, setMaxMembers] = useState(10)
+  const [maxMembers, setMaxMembers] = useState(20)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const debounceRef = useRef(null)
@@ -237,7 +237,7 @@ export default function CreateGroupModal({ onClose, onCreated }) {
               onChange={(e) => setMaxMembers(Number(e.target.value))}
               className="w-full bg-app-input border border-app-border rounded-xl px-4 py-3 text-white focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition"
             >
-              {[2, 4, 6, 8, 10, 15, 20].map((n) => (
+              {[20, 50, 100].map((n) => (
                 <option key={n} value={n}>{n} members</option>
               ))}
             </select>
