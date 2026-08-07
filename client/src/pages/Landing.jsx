@@ -1,6 +1,13 @@
 import React, { useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { motion, useScroll, useTransform, useMotionValue, useSpring, useMotionTemplate } from 'framer-motion'
+import {
+  motion,
+  useScroll,
+  useTransform,
+  useMotionValue,
+  useSpring,
+  useMotionTemplate,
+} from 'framer-motion'
 import { BookOpen, Users, Brain, Calendar, MessageSquare, Shield, ArrowRight, ChevronRight } from 'lucide-react'
 import Navbar from '../components/Navbar'
 
@@ -51,6 +58,61 @@ const steps = [
     desc: 'Chat in realtime, schedule sessions, and ask the AI tutor for help — all in one place.',
   },
 ]
+
+// ─── Hero depth elements ────────────────────────────────────────────────────
+// Small ambient dust motes drifting through the hero. Positions are
+// percentages within the hero, deliberately kept to the edges/corners so
+// nothing crosses the headline, subtext, or buttons in the center.
+
+const DUST_MOTES = [
+  { leftPct: 18, topPct: 22, size: 3, depth: 0.9, duration: 9, delay: 0, xDrift: 10 },
+  { leftPct: 82, topPct: 18, size: 2, depth: 0.5, duration: 12, delay: 0.6, xDrift: -8 },
+  { leftPct: 12, topPct: 62, size: 4, depth: 1, duration: 8, delay: 1.2, xDrift: 14 },
+  { leftPct: 88, topPct: 66, size: 2, depth: 0.6, duration: 11, delay: 0.3, xDrift: -12 },
+  { leftPct: 28, topPct: 82, size: 2, depth: 0.4, duration: 13, delay: 1.8, xDrift: 9 },
+  { leftPct: 72, topPct: 86, size: 3, depth: 0.7, duration: 10, delay: 0.9, xDrift: -10 },
+  { leftPct: 50, topPct: 12, size: 2, depth: 0.5, duration: 12.5, delay: 1.5, xDrift: 7 },
+  { leftPct: 35, topPct: 30, size: 2, depth: 0.8, duration: 9.5, delay: 2.1, xDrift: -9 },
+  { leftPct: 64, topPct: 36, size: 3, depth: 0.6, duration: 11.5, delay: 0.4, xDrift: 11 },
+  { leftPct: 20, topPct: 45, size: 2, depth: 0.3, duration: 14, delay: 1.1, xDrift: -6 },
+  { leftPct: 80, topPct: 48, size: 3, depth: 0.9, duration: 8.5, delay: 1.7, xDrift: 13 },
+  { leftPct: 45, topPct: 70, size: 2, depth: 0.5, duration: 10.5, delay: 0.7, xDrift: -7 },
+  { leftPct: 58, topPct: 20, size: 2, depth: 0.4, duration: 13.5, delay: 2.4, xDrift: 8 },
+  { leftPct: 8, topPct: 35, size: 2, depth: 0.6, duration: 9, delay: 1.9, xDrift: -11 },
+  { leftPct: 92, topPct: 40, size: 2, depth: 0.5, duration: 12, delay: 0.2, xDrift: 6 },
+  { leftPct: 40, topPct: 88, size: 2, depth: 0.3, duration: 11, delay: 1.4, xDrift: -8 },
+]
+
+function DustMote({ leftPct, topPct, size, depth, duration, delay, xDrift, mouseX, mouseY }) {
+  // Near motes (higher depth) drift more with the cursor than far ones —
+  // the same near-things-move-more-than-far-things cue real parallax uses.
+  const moteX = useTransform(mouseX, [-0.5, 0.5], [-16 * depth, 16 * depth])
+  const moteY = useTransform(mouseY, [-0.5, 0.5], [-10 * depth, 10 * depth])
+  return (
+    <motion.div
+      className="absolute pointer-events-none"
+      style={{ left: `${leftPct}%`, top: `${topPct}%`, width: size, height: size, x: moteX, y: moteY, zIndex: 4 }}
+    >
+      {/* Small, soft-edged, and drifting diagonally rather than a crisp dot
+          bobbing straight up and down — closer to how a speck of dust
+          actually tumbles and catches light unevenly. No hard box-shadow
+          halo, just a heavily-blurred core so it stays hazy. */}
+      <motion.div
+        className="w-full h-full rounded-full"
+        style={{
+          background: 'radial-gradient(circle, rgba(255,225,140,0.9) 0%, rgba(255,201,4,0.5) 55%, transparent 100%)',
+          filter: `blur(${1.1 + (1 - depth) * 1.4}px)`,
+        }}
+        animate={{
+          opacity: [0.1, 0.55, 0.15, 0.4, 0.1],
+          x: [0, xDrift, xDrift * 0.4, -xDrift * 0.5, 0],
+          y: [0, -12, -20, -8, 0],
+        }}
+        transition={{ duration, repeat: Infinity, ease: 'easeInOut', delay }}
+      />
+    </motion.div>
+  )
+}
 
 // ─── Motion variants ────────────────────────────────────────────────────────
 
@@ -389,6 +451,13 @@ export default function Landing() {
             filter: 'blur(9px)',
           }}
         />
+
+        {/* Ambient dust motes — near ones drift more with the cursor than
+            far ones, the classic multi-plane parallax depth cue, plus a
+            slow idle bob/pulse so the room feels like it has air in it. */}
+        {DUST_MOTES.map((m, i) => (
+          <DustMote key={i} {...m} mouseX={lightMouseX} mouseY={lightMouseY} />
+        ))}
 
         <motion.div
           style={{
