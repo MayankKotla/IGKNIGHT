@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   motion,
@@ -7,6 +7,7 @@ import {
   useMotionValue,
   useSpring,
   useMotionTemplate,
+  animate,
 } from 'framer-motion'
 import { BookOpen, Users, Brain, Calendar, MessageSquare, Shield, ArrowRight, ChevronRight } from 'lucide-react'
 import Navbar from '../components/Navbar'
@@ -142,24 +143,218 @@ function Divider() {
   )
 }
 
-function AnimatedFeatureCard({ icon: Icon, title, desc }) {
+// ─── Feature carousel ───────────────────────────────────────────────────────
+// A coverflow-style carousel: the active card sits centered and full size,
+// with neighbors peeking in on either side at reduced scale/opacity and a
+// slight 3D tilt. Drag/swipe the row to rotate through cards, or click a
+// side card/dot to bring it to center. Loops in both directions.
+//
+// Position is a single continuous value (not an integer index) — while
+// you're actively scrolling it, cards slide smoothly in direct proportion
+// to scroll distance instead of jumping card-by-card. When scrolling stops,
+// it coasts with whatever velocity it had and decays naturally, then
+// spring-locks onto whichever card it ends up nearest to — a gentle scroll
+// barely moves past where you left it; a fast flick keeps spinning for a
+// beat before settling.
+
+const CAROUSEL_SPACING = 300 // px between each card's center, left/right
+const CAROUSEL_DRAG_THRESHOLD = 60 // px of drag before it counts as a swipe
+const CAROUSEL_WHEEL_DEADZONE = 4 // px of trackpad deltaX before it registers
+const CAROUSEL_WHEEL_IDLE = 120 // ms of no wheel events before we start settling
+const CAROUSEL_COAST_FRICTION = 3.2 // higher = decays to a stop faster
+const CAROUSEL_COAST_STOP_VELOCITY = 0.015 // position-units/sec considered "stopped"
+const CAROUSEL_SNAP_SPRING = { type: 'spring', stiffness: 220, damping: 26 }
+
+// Shortest signed distance from `p` to card `i` around a loop of `n` cards —
+// e.g. with 6 cards, card 0 is +1 away from card 5, not -5 away.
+function carouselWrap(i, p, n) {
+  let diff = i - p
+  diff -= n * Math.round(diff / n)
+  return diff
+}
+
+// The representative of target's equivalence class (mod n) nearest current —
+// what a click/drag animates toward, so it always takes the short way around
+// the loop instead of unwinding all the way back past every other card.
+function carouselNearestTarget(target, current, n) {
+  return target + n * Math.round((current - target) / n)
+}
+
+function CarouselCard({ icon: Icon, title, desc, index, position, n, onSelect }) {
+  const diff = useTransform(position, (p) => carouselWrap(index, p, n))
+  const x = useTransform(diff, (d) => d * CAROUSEL_SPACING)
+  const scale = useTransform(diff, (d) => {
+    const abs = Math.abs(d)
+    return abs <= 1 ? 1 - abs * 0.2 : Math.max(0.4, 0.8 - (abs - 1) * 0.18)
+  })
+  const opacity = useTransform(diff, (d) => {
+    const abs = Math.abs(d)
+    if (abs > 2.4) return 0
+    return abs <= 1 ? 1 - abs * 0.5 : Math.max(0, 0.5 - (abs - 1) * 0.34)
+  })
+  const rotateY = useTransform(diff, (d) => Math.max(-22, Math.min(22, d * -22)))
+  const zIndex = useTransform(diff, (d) => Math.round(10 - Math.abs(d)))
+  const pointerEvents = useTransform(diff, (d) => (Math.abs(d) < 2.2 ? 'auto' : 'none'))
+  const borderOpacity = useTransform(diff, (d) => (Math.abs(d) < 0.15 ? 1 : 0))
+  const borderColor = useMotionTemplate`rgba(255,201,4,${borderOpacity})`
+
+  // Split into a statically-centered outer element (plain CSS transform via
+  // Tailwind's -translate classes) and an inner one that Framer drives —
+  // Framer takes over the whole `transform` property on any element it
+  // manages x/scale/rotate on, so the -50%/-50% centering has to live on a
+  // separate element or it gets silently overwritten every frame.
   return (
     <motion.div
-      variants={fadeUp}
-      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-      whileHover={{ y: -6 }}
-      className="card border rounded-2xl p-7 hover:border-ucf-gold/30 transition-colors duration-200 group cursor-default"
+      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+      style={{ zIndex, pointerEvents }}
+      onClick={onSelect}
     >
       <motion.div
-        whileHover={{ scale: 1.08, rotate: -4 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 15 }}
-        className="w-11 h-11 bg-ucf-gold/10 rounded-xl flex items-center justify-center mb-5 group-hover:bg-ucf-gold/18 transition-colors duration-200"
+        className="w-[300px] sm:w-[340px] cursor-pointer"
+        style={{ x, scale, opacity, rotateY, transformPerspective: 1200 }}
       >
-        <Icon className="w-5 h-5 text-ucf-gold" />
+        <motion.div className="card border border-transparent rounded-2xl p-9" style={{ borderColor }}>
+          <div className="w-14 h-14 bg-ucf-gold/10 rounded-xl flex items-center justify-center mb-6">
+            <Icon className="w-6 h-6 text-ucf-gold" />
+          </div>
+          <h3 className="text-lg font-semibold mb-2.5 text-white">{title}</h3>
+          <p className="text-gray-400 text-sm leading-relaxed">{desc}</p>
+        </motion.div>
       </motion.div>
-      <h3 className="text-base font-semibold mb-2 text-white">{title}</h3>
-      <p className="text-gray-400 text-sm leading-relaxed">{desc}</p>
     </motion.div>
+  )
+}
+
+function CarouselDot({ index, position, n, onClick }) {
+  const width = useTransform(position, (p) => (((Math.round(p) % n) + n) % n === index ? 20 : 6))
+  const background = useTransform(position, (p) =>
+    ((Math.round(p) % n) + n) % n === index ? '#FFC904' : '#26263a'
+  )
+  return (
+    <motion.button
+      onClick={onClick}
+      aria-label={`Show feature ${index + 1}`}
+      className="h-1.5 rounded-full"
+      style={{ width, background }}
+      transition={{ duration: 0.2 }}
+    />
+  )
+}
+
+function FeatureCarousel({ items }) {
+  const n = items.length
+  const position = useMotionValue(0)
+  const velocityRef = useRef(0)
+  const lastWheelTimeRef = useRef(0)
+  const idleTimerRef = useRef(null)
+  const coastRafRef = useRef(null)
+  const containerRef = useRef(null)
+
+  const cancelSettle = () => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = null
+    }
+    if (coastRafRef.current) {
+      cancelAnimationFrame(coastRafRef.current)
+      coastRafRef.current = null
+    }
+    position.stop()
+  }
+
+  const startSettle = () => {
+    let lastT = performance.now()
+    const step = (now) => {
+      const dt = Math.min((now - lastT) / 1000, 0.05)
+      lastT = now
+      const v = velocityRef.current
+      if (Math.abs(v) < CAROUSEL_COAST_STOP_VELOCITY) {
+        animate(position, Math.round(position.get()), CAROUSEL_SNAP_SPRING)
+        coastRafRef.current = null
+        return
+      }
+      position.set(position.get() + v * dt)
+      velocityRef.current = v * Math.exp(-CAROUSEL_COAST_FRICTION * dt)
+      coastRafRef.current = requestAnimationFrame(step)
+    }
+    coastRafRef.current = requestAnimationFrame(step)
+  }
+
+  const goTo = (index) => {
+    cancelSettle()
+    velocityRef.current = 0
+    animate(position, carouselNearestTarget(index, position.get(), n), CAROUSEL_SNAP_SPRING)
+  }
+
+  // Native (non-React) wheel listener — React attaches onWheel as a passive
+  // listener by default, which silently ignores preventDefault() and is
+  // exactly what let a horizontal trackpad swipe fall through to the
+  // browser's back/forward-navigation gesture. A manually-attached
+  // { passive: false } listener is the only reliable way to stop that.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const handleWheel = (e) => {
+      if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) return
+      e.preventDefault()
+      if (Math.abs(e.deltaX) < CAROUSEL_WHEEL_DEADZONE) return
+
+      cancelSettle()
+      const now = performance.now()
+      const dt = (now - lastWheelTimeRef.current) / 1000
+      lastWheelTimeRef.current = now
+      const deltaPos = e.deltaX / CAROUSEL_SPACING
+      position.set(position.get() + deltaPos)
+      // A gap longer than ~300ms means this is a fresh gesture, not a
+      // continuation — start its velocity estimate clean.
+      const instVelocity = dt > 0 && dt < 0.3 ? deltaPos / dt : 0
+      velocityRef.current = dt < 0.3 ? velocityRef.current * 0.6 + instVelocity * 0.4 : instVelocity
+
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = setTimeout(startSettle, CAROUSEL_WHEEL_IDLE)
+    }
+
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      el.removeEventListener('wheel', handleWheel)
+      cancelSettle()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleDragStart = () => cancelSettle()
+  const handleDragEnd = (_e, info) => {
+    const { offset, velocity } = info
+    if (offset.x < -CAROUSEL_DRAG_THRESHOLD || velocity.x < -400) {
+      goTo(Math.round(position.get()) + 1)
+    } else if (offset.x > CAROUSEL_DRAG_THRESHOLD || velocity.x > 400) {
+      goTo(Math.round(position.get()) - 1)
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative h-[380px] sm:h-[400px]">
+      <motion.div
+        className="absolute inset-0 cursor-grab active:cursor-grabbing"
+        drag="x"
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={0.7}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        {items.map((f, i) => (
+          <CarouselCard key={f.title} {...f} index={i} position={position} n={n} onSelect={() => goTo(i)} />
+        ))}
+      </motion.div>
+
+      {/* Dots — also click-to-select, and show which card is nearest-active */}
+      <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2">
+        {items.map((f, i) => (
+          <CarouselDot key={f.title} index={i} position={position} n={n} onClick={() => goTo(i)} />
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -568,15 +763,12 @@ export default function Landing() {
               </motion.p>
             </motion.div>
             <motion.div
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.15 }}
-              variants={staggerContainer}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.2 }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
             >
-              {features.map((f) => (
-                <AnimatedFeatureCard key={f.title} {...f} />
-              ))}
+              <FeatureCarousel items={features} />
             </motion.div>
           </div>
         </section>
