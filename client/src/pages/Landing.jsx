@@ -451,6 +451,7 @@ function ExtrudedHeadline() {
 
 export default function Landing() {
   const heroTransitionRef = useRef(null)
+  const featuresRef = useRef(null)
 
   // Tracks scroll progress across exactly one viewport-height of scrolling
   // right after the hero: 0 at the top of the page, 1 once the next
@@ -459,6 +460,19 @@ export default function Landing() {
     target: heroTransitionRef,
     offset: ['start start', 'end start'],
   })
+
+  // Drives the Features heading's reveal directly off scroll position: 0
+  // as the section's top is still at the bottom of the viewport (just
+  // starting to arrive), 1 once it's most of the way to its resting spot —
+  // so the heading resolves continuously as you scroll in, rather than a
+  // whileInView animation firing once and then being done.
+  const { scrollYProgress: featuresProgress } = useScroll({
+    target: featuresRef,
+    offset: ['start end', 'start 0.4'],
+  })
+  const featuresHeadingOpacity = useTransform(featuresProgress, [0, 1], [0, 1])
+  const featuresHeadingY = useTransform(featuresProgress, [0, 1], [60, 0])
+  const featuresHeadingScale = useTransform(featuresProgress, [0, 1], [0.9, 1])
   const heroOpacity = useTransform(heroProgress, [0, 1], [1, 0.5])
   const heroScale = useTransform(heroProgress, [0, 1], [1, 0.4])
   const heroY = useTransform(heroProgress, [0, 1], [0, -70])
@@ -744,23 +758,38 @@ export default function Landing() {
             scrolling near this section, it locks cleanly to fill the
             screen instead of stopping mid-way through it. */}
         <section
+          ref={featuresRef}
           className="h-screen flex flex-col justify-center px-10"
           style={{ scrollSnapAlign: 'start' }}
         >
           <div className="max-w-6xl mx-auto w-full">
+            {/* Heading reveal is tied directly to scroll position (not a
+                one-shot whileInView trigger) — it continuously resolves in
+                proportion to how far you've scrolled into the section, so
+                arriving here reads as one continuous motion rather than a
+                canned animation firing once you cross a line. */}
             <motion.div
-              className="text-center mb-14"
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.5 }}
-              variants={staggerContainer}
+              className="relative text-center mb-14"
+              style={{ opacity: featuresHeadingOpacity, y: featuresHeadingY, scale: featuresHeadingScale }}
             >
-              <motion.h2 variants={fadeUp} transition={{ duration: 0.55 }} className="text-3xl font-bold mb-3 text-white">
-                Everything you need to succeed
-              </motion.h2>
-              <motion.p variants={fadeUp} transition={{ duration: 0.55 }} className="text-gray-400 max-w-xl mx-auto">
+              {/* Contact shadow — the same grounding trick as the hero's
+                  headline, so this text reads as sitting in the same lit
+                  room rather than floating on a plain background. */}
+              <div
+                className="absolute left-1/2 -translate-x-1/2 pointer-events-none"
+                style={{
+                  top: '100%',
+                  marginTop: '-14px',
+                  width: '360px',
+                  height: '70px',
+                  background: 'radial-gradient(ellipse 60% 100% at 50% 50%, rgba(0,0,0,0.5) 0%, transparent 78%)',
+                  filter: 'blur(9px)',
+                }}
+              />
+              <h2 className="text-3xl font-bold mb-3 text-white">Everything you need to succeed</h2>
+              <p className="text-gray-400 max-w-xl mx-auto">
                 One platform built for UCF students, with every tool you need to study effectively.
-              </motion.p>
+              </p>
             </motion.div>
             <motion.div
               initial={{ opacity: 0, y: 30 }}
