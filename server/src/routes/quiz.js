@@ -79,68 +79,85 @@ router.post('/generate', requireAuth, quizGenerateLimiter, async (req, res) => {
 
   const courseName = session.groups?.courses?.name || session.groups?.courses?.code || 'the course'
 
-  // Sample questions/material group members contributed for this session, if
-  // any — used as grounding so generated quizzes reflect what was actually
-  // covered rather than generic topic trivia. Can be text, an attached photo
-  // or file, or both.
-  const { data: sampleQuestions } = await db
-    .from('session_sample_questions')
-    .select('content, file_name, file_type, storage_path')
-    .eq('session_id', session_id)
-    .order('created_at', { ascending: true })
-
-  const textSamples = (sampleQuestions || []).filter(q => q.content)
-  const imageSamples = (sampleQuestions || [])
-    .filter(q => q.storage_path && VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()))
-    .slice(0, MAX_VISION_IMAGES)
-  const extractableSamples = (sampleQuestions || [])
-    .filter(q =>
-      q.storage_path &&
-      !VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()) &&
-      EXTRACTABLE_DOC_TYPES.has((q.file_type || '').toLowerCase())
-    )
-    .slice(0, MAX_DOCUMENT_EXTRACTS)
-  const unreadableFileSamples = (sampleQuestions || [])
-    .filter(q =>
-      q.storage_path &&
-      !VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()) &&
-      !EXTRACTABLE_DOC_TYPES.has((q.file_type || '').toLowerCase())
-    )
-
-  // Actually read the text out of attached PDFs/DOCX/PPTX/TXT files, rather
-  // than just naming them — this is what makes them real grounding material.
-  const documentTexts = []
-  for (const doc of extractableSamples) {
-    const buffer = await downloadFile(db, doc.storage_path)
-    const text = buffer
-      ? await extractTextFromFile({ buffer, fileType: doc.file_type, fileName: doc.file_name })
-      : null
-    if (text) {
-      documentTexts.push({ fileName: doc.file_name, text })
-    } else {
-      unreadableFileSamples.push(doc)
-    }
-  }
-
-  const referenceParts = []
-  if (textSamples.length > 0) {
-    referenceParts.push(textSamples.map((q, i) => `${i + 1}. ${q.content}`).join('\n'))
-  }
-  if (imageSamples.length > 0) {
-    referenceParts.push(`${imageSamples.length} photo(s) of session material are attached below as images.`)
-  }
-  for (const doc of documentTexts) {
-    referenceParts.push(`Document "${doc.fileName}":\n${doc.text}`)
-  }
-  if (unreadableFileSamples.length > 0) {
-    referenceParts.push(`Group members also attached these files as reference (content not readable, but named for context): ${unreadableFileSamples.map(q => q.file_name).join(', ')}.`)
-  }
-
-  const referenceBlock = referenceParts.length > 0
-    ? `\n\nGroup members submitted this reference material from the actual session:\n${referenceParts.join('\n\n')}\n\nUse this material to calibrate the accuracy, style, and difficulty of your questions — ground them in what was actually covered, including anything shown in attached images or documents. Do not simply copy or lightly reword the reference questions; write original multiple-choice questions inspired by them.`
-    : ''
-
   try {
+    // Sample questions/material group members contributed for this session,
+    // if any — used as grounding so generated quizzes reflect what was
+    // actually covered rather than generic topic trivia. Can be text, an
+    // attached photo or file, or both. Wrapped in the same try/catch as
+    // everything else below: if the sample-questions table doesn't exist
+    // yet (migration not applied), or a download/extraction call throws,
+    // this must not take down the whole request — worst case, fall back to
+    // topics-only generation.
+    let sampleQuestions = []
+    try {
+      const { data } = await db
+        .from('session_sample_questions')
+        .select('content, file_name, file_type, storage_path')
+        .eq('session_id', session_id)
+        .order('created_at', { ascending: true })
+      sampleQuestions = data || []
+    } catch (err) {
+      console.error('Sample questions fetch failed (continuing without them):', err.message)
+    }
+
+    const textSamples = sampleQuestions.filter(q => q.content)
+    const imageSamples = sampleQuestions
+      .filter(q => q.storage_path && VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()))
+      .slice(0, MAX_VISION_IMAGES)
+    const extractableSamples = sampleQuestions
+      .filter(q =>
+        q.storage_path &&
+        !VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()) &&
+        EXTRACTABLE_DOC_TYPES.has((q.file_type || '').toLowerCase())
+      )
+      .slice(0, MAX_DOCUMENT_EXTRACTS)
+    const unreadableFileSamples = sampleQuestions
+      .filter(q =>
+        q.storage_path &&
+        !VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()) &&
+        !EXTRACTABLE_DOC_TYPES.has((q.file_type || '').toLowerCase())
+      )
+
+    // Actually read the text out of attached PDFs/DOCX/PPTX/TXT files,
+    // rather than just naming them — this is what makes them real
+    // grounding material. Any single file failing to download/extract
+    // just demotes it to "unreadable" instead of failing the whole quiz.
+    const documentTexts = []
+    for (const doc of extractableSamples) {
+      try {
+        const buffer = await downloadFile(db, doc.storage_path)
+        const text = buffer
+          ? await extractTextFromFile({ buffer, fileType: doc.file_type, fileName: doc.file_name })
+          : null
+        if (text) {
+          documentTexts.push({ fileName: doc.file_name, text })
+        } else {
+          unreadableFileSamples.push(doc)
+        }
+      } catch (err) {
+        console.error(`Extraction failed for ${doc.file_name} (continuing):`, err.message)
+        unreadableFileSamples.push(doc)
+      }
+    }
+
+    const referenceParts = []
+    if (textSamples.length > 0) {
+      referenceParts.push(textSamples.map((q, i) => `${i + 1}. ${q.content}`).join('\n'))
+    }
+    if (imageSamples.length > 0) {
+      referenceParts.push(`${imageSamples.length} photo(s) of session material are attached below as images.`)
+    }
+    for (const doc of documentTexts) {
+      referenceParts.push(`Document "${doc.fileName}":\n${doc.text}`)
+    }
+    if (unreadableFileSamples.length > 0) {
+      referenceParts.push(`Group members also attached these files as reference (content not readable, but named for context): ${unreadableFileSamples.map(q => q.file_name).join(', ')}.`)
+    }
+
+    const referenceBlock = referenceParts.length > 0
+      ? `\n\nGroup members submitted this reference material from the actual session:\n${referenceParts.join('\n\n')}\n\nUse this material to calibrate the accuracy, style, and difficulty of your questions — ground them in what was actually covered, including anything shown in attached images or documents. Do not simply copy or lightly reword the reference questions; write original multiple-choice questions inspired by them.`
+      : ''
+
     const prompt = `You are an expert academic quiz writer creating a "KnightCheck" retention quiz for college students at UCF.
 
 Course: ${courseName}
@@ -159,10 +176,14 @@ Return valid JSON only, no markdown formatting or commentary, in this exact stru
     // Attach any sample-question photos as vision input alongside the prompt.
     const imageBlocks = []
     for (const img of imageSamples) {
-      const buffer = await downloadFile(db, img.storage_path)
-      if (buffer) {
-        const mediaType = img.file_type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : img.file_type.toLowerCase()
-        imageBlocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: buffer.toString('base64') } })
+      try {
+        const buffer = await downloadFile(db, img.storage_path)
+        if (buffer) {
+          const mediaType = img.file_type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : img.file_type.toLowerCase()
+          imageBlocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: buffer.toString('base64') } })
+        }
+      } catch (err) {
+        console.error(`Image download failed for ${img.file_name} (continuing):`, err.message)
       }
     }
 
