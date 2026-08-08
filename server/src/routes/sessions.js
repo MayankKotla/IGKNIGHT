@@ -218,6 +218,99 @@ router.delete('/:sessionId/notes/:noteId', requireAuth, async (req, res) => {
   return res.json({ success: true })
 })
 
+// GET /:sessionId/sample-questions
+router.get('/:sessionId/sample-questions', requireAuth, async (req, res) => {
+  const { sessionId } = req.params
+
+  const { data: session } = await supabase
+    .from('sessions').select('group_id').eq('id', sessionId).single()
+
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', session.group_id)
+    .eq('user_id', req.user.id)
+    .single()
+
+  if (!membership) return res.status(403).json({ error: 'Not a group member' })
+
+  const { data: sampleQuestions, error } = await supabase
+    .from('session_sample_questions')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: true })
+
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json(sampleQuestions || [])
+})
+
+// POST /:sessionId/sample-questions
+// Accepts a text question, an attached file/image (already uploaded to the
+// session-uploads storage bucket by the client), or both.
+router.post('/:sessionId/sample-questions', requireAuth, async (req, res) => {
+  const { sessionId } = req.params
+  const { content, file_name, file_size, file_type, storage_path } = req.body
+
+  const trimmedContent = content?.trim() || null
+  if (!trimmedContent && !storage_path) {
+    return res.status(400).json({ error: 'Add question text, an attachment, or both' })
+  }
+
+  const { data: session } = await supabase
+    .from('sessions').select('group_id').eq('id', sessionId).single()
+
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', session.group_id)
+    .eq('user_id', req.user.id)
+    .maybeSingle()
+
+  if (!membership) return res.status(403).json({ error: 'Not a group member' })
+
+  const { data: sampleQuestion, error } = await supabase
+    .from('session_sample_questions')
+    .insert({
+      session_id: sessionId,
+      user_id: req.user.id,
+      content: trimmedContent,
+      file_name: storage_path ? file_name : null,
+      file_size: storage_path ? file_size : null,
+      file_type: storage_path ? file_type : null,
+      storage_path: storage_path || null,
+    })
+    .select()
+    .single()
+
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json(sampleQuestion)
+})
+
+// DELETE /:sessionId/sample-questions/:questionId
+router.delete('/:sessionId/sample-questions/:questionId', requireAuth, async (req, res) => {
+  const { questionId } = req.params
+
+  const { data: sampleQuestion } = await supabase
+    .from('session_sample_questions').select('user_id, storage_path').eq('id', questionId).single()
+
+  if (!sampleQuestion) return res.status(404).json({ error: 'Sample question not found' })
+  if (sampleQuestion.user_id !== req.user.id) return res.status(403).json({ error: 'Not your sample question' })
+
+  if (sampleQuestion.storage_path) {
+    await supabase.storage.from('session-uploads').remove([sampleQuestion.storage_path])
+  }
+
+  const { error } = await supabase
+    .from('session_sample_questions').delete().eq('id', questionId)
+
+  if (error) return res.status(500).json({ error: error.message })
+  return res.json({ success: true })
+})
+
 // GET /:sessionId/uploads
 router.get('/:sessionId/uploads', requireAuth, async (req, res) => {
   const { sessionId } = req.params

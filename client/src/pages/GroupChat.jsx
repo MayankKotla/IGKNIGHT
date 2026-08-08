@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ScheduleSessionModal from '../components/ScheduleSessionModal'
+import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 
 function formatTime(iso) {
   const d = new Date(iso)
@@ -184,8 +185,27 @@ export default function GroupChat() {
   }
 
   if (loading) return (
-    <div className="h-screen bg-app-bg flex items-center justify-center">
-      <div className="text-gray-500 text-sm">Loading…</div>
+    <div className="h-screen bg-app-bg text-white flex flex-col overflow-x-hidden">
+      <header className="border-b border-app-border px-4 py-3 flex items-center gap-4 shrink-0">
+        <ArrowLeft className="w-5 h-5 text-gray-700" />
+        <SkeletonCircle className="w-9 h-9 rounded-xl" />
+        <div className="flex-1 min-w-0 space-y-2">
+          <SkeletonLine className="h-3.5 w-32" />
+          <SkeletonLine className="h-2.5 w-16" />
+        </div>
+      </header>
+      <div className="border-b border-app-border flex items-center gap-6 px-5 py-3 shrink-0">
+        {[0, 1, 2, 3].map((i) => (
+          <SkeletonLine key={i} className="h-3.5 w-16" />
+        ))}
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className={`flex ${i % 2 ? 'justify-end' : 'justify-start'}`}>
+            <SkeletonBlock className={`h-10 ${i % 2 ? 'w-40' : 'w-56'}`} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 
@@ -201,8 +221,12 @@ export default function GroupChat() {
   const memberCount = Object.keys(members).length
   const isOwner = members[user.id]?.role === 'owner'
   const now = new Date()
-  const upcoming = sessions.filter((s) => new Date(s.start_time) >= now)
-  const past = sessions.filter((s) => new Date(s.start_time) < now)
+  // A session counts as "past" once it has ENDED, not merely once it has
+  // started — otherwise an in-progress session (start_time passed, end_time
+  // still ahead) would incorrectly drop into the Past bucket.
+  const hasEnded = (s) => new Date(s.end_time || s.start_time) < now
+  const upcoming = sessions.filter((s) => !hasEnded(s))
+  const past = sessions.filter((s) => hasEnded(s))
 
   return (
     <div className="h-screen bg-app-bg text-white flex flex-col overflow-x-hidden">
@@ -597,7 +621,29 @@ function InsightsTab({ groupId }) {
 
   if (loading) return (
     <div className="flex-1 overflow-y-auto px-4 py-6">
-      <div className="text-gray-500 text-sm text-center pt-12">Loading leaderboard…</div>
+      <div className="mb-6 space-y-2">
+        <SkeletonLine className="h-4 w-32" />
+        <SkeletonLine className="h-2.5 w-72" />
+      </div>
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="card border border-app-border rounded-xl p-4 text-center space-y-2">
+              <SkeletonLine className="h-6 w-10 mx-auto" />
+              <SkeletonLine className="h-2.5 w-14 mx-auto" />
+            </div>
+          ))}
+        </div>
+        <div className="card border border-app-border rounded-2xl p-4 space-y-3">
+          <SkeletonLine className="h-3 w-32" />
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-1.5">
+              <SkeletonLine className="h-3.5 w-full" />
+              <SkeletonLine className="h-1.5 w-full rounded-full" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   )
 

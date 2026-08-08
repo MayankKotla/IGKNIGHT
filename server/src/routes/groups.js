@@ -60,9 +60,12 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(403).json({ error: 'Only Teaching Assistants can create groups.' })
   }
 
-  const { name, description, professor, course_code, course_id: rawCourseId, max_members, is_public } = req.body
+  const { name, description, professor, course_code, course_id: rawCourseId, is_public } = req.body
+  const MAX_MEMBERS = 200
 
   if (!name?.trim()) return res.status(400).json({ error: 'Group name is required' })
+  if (!professor?.trim()) return res.status(400).json({ error: 'Professor name is required' })
+  if (!course_code?.trim() && !rawCourseId) return res.status(400).json({ error: 'Course code is required' })
 
   let course_id = rawCourseId ?? null
 
@@ -79,7 +82,7 @@ router.post('/', requireAuth, async (req, res) => {
       description,
       professor: professor?.trim() || null,
       course_id,
-      max_members: max_members || 10,
+      max_members: MAX_MEMBERS,
       is_public: is_public ?? true,
       created_by: req.user.id,
     })

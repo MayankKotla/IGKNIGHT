@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { normalizeCourseCode, UCF_CODE_RE } from '../lib/courseCode'
 
 const API = import.meta.env.VITE_API_URL
+const MAX_MEMBERS = 200
 
 export default function CreateGroupModal({ onClose, onCreated }) {
   const [courseCode, setCourseCode] = useState('')
@@ -12,7 +13,6 @@ export default function CreateGroupModal({ onClose, onCreated }) {
   const [groupName, setGroupName] = useState('')
   const [professor, setProfessor] = useState('')
   const [description, setDescription] = useState('')
-  const [maxMembers, setMaxMembers] = useState(20)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const debounceRef = useRef(null)
@@ -70,6 +70,10 @@ export default function CreateGroupModal({ onClose, onCreated }) {
       setError('Group name is required.')
       return
     }
+    if (!professor.trim()) {
+      setError('Professor name is required.')
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -87,7 +91,7 @@ export default function CreateGroupModal({ onClose, onCreated }) {
           name: groupName.trim(),
           professor: professor.trim() || null,
           description: description.trim() || null,
-          max_members: maxMembers,
+          max_members: MAX_MEMBERS,
         }),
       })
 
@@ -201,13 +205,14 @@ export default function CreateGroupModal({ onClose, onCreated }) {
           {/* Professor */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1.5">
-              Professor <span className="text-gray-500">(optional)</span>
+              Professor
             </label>
             <input
               value={professor}
               onChange={(e) => setProfessor(e.target.value)}
               placeholder="e.g. Dr. Smith"
               maxLength={80}
+              required
               className="w-full bg-app-input border border-app-border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition"
             />
           </div>
@@ -227,22 +232,6 @@ export default function CreateGroupModal({ onClose, onCreated }) {
             />
           </div>
 
-          {/* Max members */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
-              Max Members
-            </label>
-            <select
-              value={maxMembers}
-              onChange={(e) => setMaxMembers(Number(e.target.value))}
-              className="w-full bg-app-input border border-app-border rounded-xl px-4 py-3 text-white focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition"
-            >
-              {[20, 50, 100].map((n) => (
-                <option key={n} value={n}>{n} members</option>
-              ))}
-            </select>
-          </div>
-
           {/* Actions */}
           <div className="flex gap-3 pt-1">
             <button
@@ -254,7 +243,7 @@ export default function CreateGroupModal({ onClose, onCreated }) {
             </button>
             <button
               type="submit"
-              disabled={submitting || codeStatus === 'invalid' || !courseCode.trim()}
+              disabled={submitting || codeStatus === 'invalid' || !courseCode.trim() || !professor.trim()}
               className="flex-1 bg-ucf-gold text-black font-bold py-3 rounded-xl hover:bg-yellow-400 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               {submitting ? 'Creating…' : 'Create Group'}

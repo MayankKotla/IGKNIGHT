@@ -3,9 +3,27 @@ const Anthropic = require('@anthropic-ai/sdk')
 const { createClient } = require('@supabase/supabase-js')
 const { requireAuth } = require('../middleware/auth')
 const { quizGenerateLimiter, aiUtilityLimiter } = require('../middleware/rateLimit')
+const { extractTextFromFile } = require('../services/extractText')
 
 const router = express.Router()
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+// Claude's vision input only accepts these image formats — HEIC/HEIF get
+// referenced by filename instead, since they can't be read as either an
+// image or a text document.
+const VISION_MEDIA_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'])
+const MAX_VISION_IMAGES = 4
+
+// Document types extractText.js can actually read. Legacy binary .doc/.ppt
+// (application/msword, application/vnd.ms-powerpoint) aren't in this list —
+// they fall back to filename-only reference.
+const EXTRACTABLE_DOC_TYPES = new Set([
+  'text/plain',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+])
+const MAX_DOCUMENT_EXTRACTS = 3
 
 function makeClient(token) {
   return createClient(
@@ -13,6 +31,12 @@ function makeClient(token) {
     process.env.SUPABASE_ANON_KEY,
     { global: { headers: { Authorization: `Bearer ${token}` } } }
   )
+}
+
+async function downloadFile(db, storagePath) {
+  const { data, error } = await db.storage.from('session-uploads').download(storagePath)
+  if (error || !data) return null
+  return Buffer.from(await data.arrayBuffer())
 }
 
 // POST /api/quiz/generate — generate (or return existing) quiz for a session
@@ -55,13 +79,101 @@ router.post('/generate', requireAuth, quizGenerateLimiter, async (req, res) => {
 
   const courseName = session.groups?.courses?.name || session.groups?.courses?.code || 'the course'
 
+  // Sample questions/material group members contributed for this session, if
+  // any — used as grounding so generated quizzes reflect what was actually
+  // covered rather than generic topic trivia. Can be text, an attached photo
+  // or file, or both.
+  const { data: sampleQuestions } = await db
+    .from('session_sample_questions')
+    .select('content, file_name, file_type, storage_path')
+    .eq('session_id', session_id)
+    .order('created_at', { ascending: true })
+
+  const textSamples = (sampleQuestions || []).filter(q => q.content)
+  const imageSamples = (sampleQuestions || [])
+    .filter(q => q.storage_path && VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()))
+    .slice(0, MAX_VISION_IMAGES)
+  const extractableSamples = (sampleQuestions || [])
+    .filter(q =>
+      q.storage_path &&
+      !VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()) &&
+      EXTRACTABLE_DOC_TYPES.has((q.file_type || '').toLowerCase())
+    )
+    .slice(0, MAX_DOCUMENT_EXTRACTS)
+  const unreadableFileSamples = (sampleQuestions || [])
+    .filter(q =>
+      q.storage_path &&
+      !VISION_MEDIA_TYPES.has((q.file_type || '').toLowerCase()) &&
+      !EXTRACTABLE_DOC_TYPES.has((q.file_type || '').toLowerCase())
+    )
+
+  // Actually read the text out of attached PDFs/DOCX/PPTX/TXT files, rather
+  // than just naming them — this is what makes them real grounding material.
+  const documentTexts = []
+  for (const doc of extractableSamples) {
+    const buffer = await downloadFile(db, doc.storage_path)
+    const text = buffer
+      ? await extractTextFromFile({ buffer, fileType: doc.file_type, fileName: doc.file_name })
+      : null
+    if (text) {
+      documentTexts.push({ fileName: doc.file_name, text })
+    } else {
+      unreadableFileSamples.push(doc)
+    }
+  }
+
+  const referenceParts = []
+  if (textSamples.length > 0) {
+    referenceParts.push(textSamples.map((q, i) => `${i + 1}. ${q.content}`).join('\n'))
+  }
+  if (imageSamples.length > 0) {
+    referenceParts.push(`${imageSamples.length} photo(s) of session material are attached below as images.`)
+  }
+  for (const doc of documentTexts) {
+    referenceParts.push(`Document "${doc.fileName}":\n${doc.text}`)
+  }
+  if (unreadableFileSamples.length > 0) {
+    referenceParts.push(`Group members also attached these files as reference (content not readable, but named for context): ${unreadableFileSamples.map(q => q.file_name).join(', ')}.`)
+  }
+
+  const referenceBlock = referenceParts.length > 0
+    ? `\n\nGroup members submitted this reference material from the actual session:\n${referenceParts.join('\n\n')}\n\nUse this material to calibrate the accuracy, style, and difficulty of your questions — ground them in what was actually covered, including anything shown in attached images or documents. Do not simply copy or lightly reword the reference questions; write original multiple-choice questions inspired by them.`
+    : ''
+
   try {
-    const prompt = `You are an academic quiz generator for college students. Generate 5 multiple choice questions that test understanding of the following topics: ${topics.join(', ')}. The course is ${courseName}. Each question should have 4 answer options (A, B, C, D) with exactly one correct answer. Make questions conceptual, not trivial. Return valid JSON only, no markdown, in this exact format: { "questions": [ { "question": "string", "topic": "string (one of the topics listed above)", "options": ["string", "string", "string", "string"], "correct": 0, "explanation": "string" } ] }`
+    const prompt = `You are an expert academic quiz writer creating a "KnightCheck" retention quiz for college students at UCF.
+
+Course: ${courseName}
+Topics covered in this study session: ${topics.join(', ')}${referenceBlock}
+
+Write exactly 5 multiple-choice questions that test genuine conceptual understanding of these topics — not trivial recall, wording tricks, or ambiguous phrasing. Requirements for every question:
+- Exactly 4 answer options, with exactly one unambiguously correct answer
+- No "all of the above" / "none of the above" options
+- Plausible, non-silly distractors (wrong options should reflect common misconceptions, not be obviously wrong)
+- A concise, accurate explanation of why the correct answer is right
+- Tagged with the specific topic (from the list above) it tests
+
+Return valid JSON only, no markdown formatting or commentary, in this exact structure:
+{ "questions": [ { "question": "string", "topic": "string (one of the topics listed above)", "options": ["string", "string", "string", "string"], "correct": 0, "explanation": "string" } ] }`
+
+    // Attach any sample-question photos as vision input alongside the prompt.
+    const imageBlocks = []
+    for (const img of imageSamples) {
+      const buffer = await downloadFile(db, img.storage_path)
+      if (buffer) {
+        const mediaType = img.file_type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : img.file_type.toLowerCase()
+        imageBlocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: buffer.toString('base64') } })
+      }
+    }
+
+    const messageContent = imageBlocks.length > 0
+      ? [...imageBlocks, { type: 'text', text: prompt }]
+      : prompt
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: messageContent }],
     })
 
     let parsed

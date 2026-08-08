@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, Video, MapPin, ExternalLink, Copy, Check, UserPlus,
   Trash2, Download, ChevronLeft, ChevronRight, X, FileText,
   Image as ImageIcon, Upload, Calendar, BookOpen, CheckCircle, Target,
+  Paperclip,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -94,7 +96,13 @@ function FileTypeIcon({ mimeType }) {
 export default function SessionDetail() {
   const { groupId, sessionId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
+
+  const backToSessions = () =>
+    location.state?.from === 'dashboard-sessions'
+      ? navigate('/dashboard', { state: { tab: 'sessions' } })
+      : navigate(`/groups/${groupId}`, { state: { tab: 'sessions' } })
 
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -121,6 +129,13 @@ export default function SessionDetail() {
   const [quizId, setQuizId] = useState(null)
   const [generatingQuiz, setGeneratingQuiz] = useState(false)
 
+  const [sampleQuestions, setSampleQuestions] = useState([])
+  const [sampleInput, setSampleInput] = useState('')
+  const [samplePosting, setSamplePosting] = useState(false)
+  const [sampleFile, setSampleFile] = useState(null)
+  const [sampleDragOver, setSampleDragOver] = useState(false)
+  const sampleFileInputRef = useRef(null)
+
   const fileInputRef = useRef(null)
 
   const getToken = async () => {
@@ -145,10 +160,11 @@ export default function SessionDetail() {
         const headers = { Authorization: `Bearer ${token}` }
         const base = import.meta.env.VITE_API_URL
 
-        const [sessionRes, notesRes, uploadsRes] = await Promise.all([
+        const [sessionRes, notesRes, uploadsRes, sampleRes] = await Promise.all([
           fetch(`${base}/api/sessions/${sessionId}`, { headers }),
           fetch(`${base}/api/sessions/${sessionId}/notes`, { headers }),
           fetch(`${base}/api/sessions/${sessionId}/uploads`, { headers }),
+          fetch(`${base}/api/sessions/${sessionId}/sample-questions`, { headers }),
         ])
 
         if (!sessionRes.ok) {
@@ -157,10 +173,11 @@ export default function SessionDetail() {
           return
         }
 
-        const [sessionData, notesData, uploadsData] = await Promise.all([
+        const [sessionData, notesData, uploadsData, sampleData] = await Promise.all([
           sessionRes.json(),
           notesRes.ok ? notesRes.json() : [],
           uploadsRes.ok ? uploadsRes.json() : [],
+          sampleRes.ok ? sampleRes.json() : [],
         ])
 
         if (cancelled) return
@@ -169,8 +186,10 @@ export default function SessionDetail() {
         setAttendees(sessionData.attendees || [])
         setNotes(notesData || [])
         setUploads(uploadsData || [])
+        setSampleQuestions(sampleData || [])
 
         for (const up of uploadsData || []) generateSignedUrl(up)
+        for (const q of sampleData || []) { if (q.storage_path) generateSignedUrl(q) }
 
         const { data: existingQuiz } = await supabase
           .from('quizzes')
@@ -234,6 +253,28 @@ export default function SessionDetail() {
         filter: `session_id=eq.${sessionId}`,
       }, (payload) => {
         setNotes(prev => prev.filter(n => n.id !== payload.old.id))
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [sessionId, user])
+
+  // ── Realtime: sample questions ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!user || !sessionId) return
+    const channel = supabase
+      .channel(`session-sample-questions:${sessionId}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'session_sample_questions',
+        filter: `session_id=eq.${sessionId}`,
+      }, (payload) => {
+        setSampleQuestions(prev => prev.some(q => q.id === payload.new.id) ? prev : [...prev, payload.new])
+        if (payload.new.storage_path) generateSignedUrl(payload.new)
+      })
+      .on('postgres_changes', {
+        event: 'DELETE', schema: 'public', table: 'session_sample_questions',
+        filter: `session_id=eq.${sessionId}`,
+      }, (payload) => {
+        setSampleQuestions(prev => prev.filter(q => q.id !== payload.old.id))
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -312,6 +353,64 @@ export default function SessionDetail() {
     } finally {
       setGeneratingQuiz(false)
     }
+  }
+
+  const handlePostSample = async () => {
+    const content = sampleInput.trim()
+    if (samplePosting || (!content && !sampleFile)) return
+    setSamplePosting(true)
+
+    let attachment = null
+    if (sampleFile) {
+      if (sampleFile.size > 10 * 1024 * 1024) {
+        showToast(`${sampleFile.name}: exceeds 10MB limit`, 'error')
+        setSamplePosting(false)
+        return
+      }
+      if (!isAllowedType(sampleFile)) {
+        showToast(`${sampleFile.name}: file type not allowed`, 'error')
+        setSamplePosting(false)
+        return
+      }
+      const timestamp = Date.now()
+      const safeName = sampleFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const storagePath = `${groupId}/${sessionId}/sample-questions/${timestamp}_${safeName}`
+      const { error: storageError } = await supabase.storage
+        .from('session-uploads')
+        .upload(storagePath, sampleFile, { upsert: false })
+      if (storageError) {
+        showToast(`${sampleFile.name}: upload failed`, 'error')
+        setSamplePosting(false)
+        return
+      }
+      attachment = { file_name: sampleFile.name, file_size: sampleFile.size, file_type: sampleFile.type, storage_path: storagePath }
+    }
+
+    const token = await getToken()
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}/sample-questions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ content, ...attachment }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      setSampleQuestions(prev => prev.some(q => q.id === data.id) ? prev : [...prev, data])
+      if (data.storage_path) generateSignedUrl(data)
+      setSampleInput('')
+      setSampleFile(null)
+    } else {
+      showToast(data.error || 'Failed to add sample question', 'error')
+    }
+    setSamplePosting(false)
+  }
+
+  const handleDeleteSample = async (id) => {
+    const token = await getToken()
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}/sample-questions/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.ok) setSampleQuestions(prev => prev.filter(q => q.id !== id))
   }
 
   // ── Notes ───────────────────────────────────────────────────────────────────
@@ -458,10 +557,69 @@ export default function SessionDetail() {
     if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files)
   }
 
+  // ── Drag & drop — sample questions ──────────────────────────────────────────
+  const handleSampleDragOver = (e) => { e.preventDefault(); setSampleDragOver(true) }
+  const handleSampleDragLeave = (e) => { e.preventDefault(); setSampleDragOver(false) }
+  const handleSampleDrop = (e) => {
+    e.preventDefault()
+    setSampleDragOver(false)
+    const dropped = e.dataTransfer.files
+    if (!dropped.length) return
+    if (dropped.length > 1) showToast('Only one attachment at a time — using the first file', 'error')
+    setSampleFile(dropped[0])
+  }
+
   // ── Loading / error states ───────────────────────────────────────────────────
   if (loading) return (
-    <div className="min-h-screen bg-app-bg flex items-center justify-center">
-      <p className="text-gray-500 text-sm">Loading session…</p>
+    <div className="min-h-screen bg-app-bg text-white">
+      <header className="border-b border-app-border bg-app-surface sticky top-0 z-10 px-4 py-3">
+        <SkeletonLine className="h-4 w-32" />
+      </header>
+      <main className="max-w-[800px] mx-auto px-6 py-8 space-y-10">
+        <section>
+          <div className="card border border-app-border rounded-2xl p-6 space-y-5">
+            <div className="flex items-start justify-between gap-4">
+              <SkeletonLine className="h-7 w-2/3" />
+              <SkeletonLine className="h-6 w-20 rounded-full shrink-0" />
+            </div>
+            <SkeletonLine className="h-4 w-40" />
+            <SkeletonLine className="h-4 w-56" />
+            <SkeletonLine className="h-3.5 w-full" />
+            <SkeletonLine className="h-3.5 w-4/5" />
+            <div className="flex gap-2">
+              <SkeletonLine className="h-6 w-16 rounded-full" />
+              <SkeletonLine className="h-6 w-20 rounded-full" />
+            </div>
+            <div className="flex items-center gap-2.5">
+              <SkeletonCircle className="w-7 h-7" />
+              <SkeletonLine className="h-3.5 w-32" />
+            </div>
+            <div className="border-t border-app-border" />
+            <div>
+              <SkeletonLine className="h-3 w-36 mb-3" />
+              <div className="flex gap-2">
+                <SkeletonLine className="h-7 w-20 rounded-full" />
+                <SkeletonLine className="h-7 w-20 rounded-full" />
+              </div>
+            </div>
+          </div>
+        </section>
+        <section>
+          <SkeletonLine className="h-5 w-40 mb-5" />
+          <SkeletonBlock className="h-24" />
+          <div className="space-y-3 mt-5">
+            {[0, 1].map((i) => (
+              <div key={i} className="card border border-app-border rounded-2xl p-4 flex items-start gap-3">
+                <SkeletonCircle className="w-7 h-7" />
+                <div className="flex-1 space-y-2">
+                  <SkeletonLine className="h-3.5 w-3/4" />
+                  <SkeletonLine className="h-3.5 w-1/2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
     </div>
   )
 
@@ -469,7 +627,7 @@ export default function SessionDetail() {
     <div className="min-h-screen bg-app-bg flex items-center justify-center">
       <div className="text-center">
         <p className="text-white font-semibold mb-2">{pageError}</p>
-        <button onClick={() => navigate(`/groups/${groupId}`, { state: { tab: 'sessions' } })} className="text-ucf-gold text-sm hover:underline">
+        <button onClick={backToSessions} className="text-ucf-gold text-sm hover:underline">
           ← Back to sessions
         </button>
       </div>
@@ -481,9 +639,6 @@ export default function SessionDetail() {
   const sType = session.session_type || (session.is_virtual ? 'online' : 'in_person')
   const isAttending = attendees.some(a => a.user_id === user.id)
   const hasStarted = new Date(session.start_time) <= new Date()
-  const hasEnded = session.end_time
-    ? new Date(session.end_time) <= new Date()
-    : new Date(session.start_time) <= new Date()
 
   const TYPE_BADGE = {
     in_person: { label: 'In-Person', cls: 'bg-ucf-gold/10 text-ucf-gold border-ucf-gold/20' },
@@ -569,7 +724,7 @@ export default function SessionDetail() {
       {/* ── Header ── */}
       <header className="border-b border-app-border bg-app-surface sticky top-0 z-10 px-4 py-3">
         <button
-          onClick={() => navigate(`/groups/${groupId}`, { state: { tab: 'sessions' } })}
+          onClick={backToSessions}
           className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -760,7 +915,7 @@ export default function SessionDetail() {
         {/* ════════════════════════════════════════════
             Section 1.5 — KnightCheck
         ════════════════════════════════════════════ */}
-        {hasEnded && (
+        {hasStarted && (
           <section>
             <div className="card border border-ucf-gold/20 rounded-2xl p-6 bg-ucf-gold/5">
               <div className="flex items-start gap-3">
@@ -793,6 +948,123 @@ export default function SessionDetail() {
                   )}
                 </div>
               </div>
+
+              {/* Sample questions — optional grounding material for the AI generator */}
+              {!quizId && (
+                <div
+                  onDragOver={handleSampleDragOver}
+                  onDragLeave={handleSampleDragLeave}
+                  onDrop={handleSampleDrop}
+                  className={`relative mt-5 pt-5 border-t rounded-b-xl transition-colors duration-150 ${
+                    sampleDragOver ? 'border-ucf-gold/40 bg-ucf-gold/5' : 'border-ucf-gold/10'
+                  }`}
+                >
+                  {sampleDragOver && (
+                    <div className="absolute inset-0 top-5 rounded-xl border-2 border-dashed border-ucf-gold/50 bg-app-surface/90 flex items-center justify-center z-10 pointer-events-none">
+                      <p className="text-sm font-medium text-ucf-gold flex items-center gap-2">
+                        <Paperclip className="w-4 h-4" /> Drop to attach
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Sample Questions (optional)</p>
+                  <p className="text-xs text-gray-500 mb-1">
+                    Add reference questions, or a photo/file from the session — KnightCheck uses them to write a more accurate quiz. Works fine without any too.
+                  </p>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Drag & drop a file anywhere in this box, or click <Paperclip className="w-3 h-3 inline -mt-0.5" /> to browse. KnightCheck actually reads JPG/PNG/GIF/WEBP photos and PDF/DOCX/PPTX/TXT documents. HEIC photos and legacy .doc/.ppt files can be attached too, just won't be scanned by the AI. Max 10MB.
+                  </p>
+
+                  {sampleFile && (
+                    <div className="flex items-center gap-2 bg-app-input border border-app-border rounded-lg px-3 py-2 mb-2 text-xs">
+                      <Paperclip className="w-3.5 h-3.5 text-ucf-gold shrink-0" />
+                      <span className="flex-1 text-gray-300 truncate">{sampleFile.name}</span>
+                      <button onClick={() => setSampleFile(null)} className="shrink-0 text-gray-500 hover:text-gray-300 transition-colors">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      value={sampleInput}
+                      onChange={e => setSampleInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handlePostSample() }}
+                      placeholder="e.g. What is the time complexity of binary search?"
+                      className="flex-1 bg-app-input border border-app-border rounded-xl px-3.5 py-2.5 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-ucf-gold/60 focus:ring-1 focus:ring-ucf-gold/25 transition-all duration-200"
+                    />
+                    <input
+                      ref={sampleFileInputRef}
+                      type="file"
+                      accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.txt"
+                      onChange={e => { if (e.target.files[0]) setSampleFile(e.target.files[0]); e.target.value = '' }}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => sampleFileInputRef.current?.click()}
+                      title="Attach a photo or file"
+                      className="shrink-0 bg-app-input border border-app-border text-gray-400 px-3 py-2.5 rounded-xl hover:border-ucf-gold/40 hover:text-white transition-colors duration-200"
+                    >
+                      <Paperclip className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handlePostSample}
+                      disabled={samplePosting || (!sampleInput.trim() && !sampleFile)}
+                      className="shrink-0 bg-app-input border border-app-border text-gray-300 font-medium px-4 py-2.5 rounded-xl text-sm hover:border-ucf-gold/40 hover:text-white transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {samplePosting ? 'Adding…' : 'Add'}
+                    </button>
+                  </div>
+
+                  {sampleQuestions.length > 0 && (
+                    <div className="space-y-2">
+                      {sampleQuestions.map(q => {
+                        const isImage = q.file_type && isImageType(q.file_type)
+                        return (
+                          <div key={q.id} className="flex items-start gap-2 group/sample">
+                            <div className="flex-1 min-w-0 space-y-1.5">
+                              {q.content && <p className="text-xs text-gray-400 leading-relaxed">{q.content}</p>}
+                              {q.storage_path && (
+                                isImage ? (
+                                  signedUrls[q.id] ? (
+                                    <img
+                                      src={signedUrls[q.id]}
+                                      alt={q.file_name}
+                                      className="max-h-28 rounded-lg border border-app-border cursor-pointer"
+                                      onClick={() => window.open(signedUrls[q.id], '_blank')}
+                                    />
+                                  ) : (
+                                    <div className="w-20 h-20 rounded-lg bg-app-input border border-app-border flex items-center justify-center">
+                                      <ImageIcon className="w-5 h-5 text-gray-600" />
+                                    </div>
+                                  )
+                                ) : (
+                                  <a
+                                    href={signedUrls[q.id] || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-xs text-gray-400 bg-app-input border border-app-border rounded-lg px-2.5 py-1.5 hover:text-white hover:border-ucf-gold/40 transition-colors"
+                                  >
+                                    <FileText className="w-3.5 h-3.5" /> {q.file_name}
+                                  </a>
+                                )
+                              )}
+                            </div>
+                            {q.user_id === user.id && (
+                              <button
+                                onClick={() => handleDeleteSample(q.id)}
+                                className="shrink-0 opacity-0 group-hover/sample:opacity-100 transition-opacity duration-150 text-gray-600 hover:text-red-400"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </section>
         )}

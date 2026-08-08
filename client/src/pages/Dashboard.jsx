@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { BookOpen, Users, Brain, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, Zap, CheckCircle, Trophy, Clock, Video, ChevronDown } from 'lucide-react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { BookOpen, Users, Brain, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, Zap, CheckCircle, Trophy, Clock, Video, ChevronDown, List, LayoutGrid } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import CreateGroupModal from '../components/CreateGroupModal'
 import ScheduleSessionModal from '../components/ScheduleSessionModal'
 import { normalizeForSearch } from '../lib/courseCode'
+import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 
 const NAV = [
   { id: 'home', icon: BookOpen, label: 'Home' },
@@ -26,10 +28,142 @@ function DashDivider() {
   )
 }
 
+// ─── Motion helpers ─────────────────────────────────────────────────────────
+
+const dashFadeUp = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0 },
+}
+
+const dashStagger = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.07, delayChildren: 0.03 } },
+}
+
+// ─── Group list — row and card variants ────────────────────────────────────
+
+function computeGroupCardMeta(g, groupMeta, userId) {
+  const memberCount = groupMeta.memberCounts?.[g.id] ?? '—'
+  const lastMsg = groupMeta.lastMessages?.[g.id]
+  const nextSession = groupMeta.nextSessions?.[g.id]
+  const isOwnMsg = lastMsg?.user_id === userId
+  const senderLabel = isOwnMsg ? 'You' : (lastMsg?.users?.full_name?.split(' ')[0] ?? null)
+  const preview = lastMsg
+    ? `${senderLabel ? senderLabel + ': ' : ''}${lastMsg.content.length > 48 ? lastMsg.content.slice(0, 48) + '…' : lastMsg.content}`
+    : null
+  return { memberCount, lastMsg, nextSession, preview }
+}
+
+function GroupRow({ g, userId, groupMeta }) {
+  const { memberCount, lastMsg, nextSession, preview } = computeGroupCardMeta(g, groupMeta, userId)
+  return (
+    <motion.div variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }} whileHover={{ x: 3 }}>
+      <Link
+        to={`/groups/${g.id}`}
+        className="card border border-app-border rounded-2xl p-4 flex items-center gap-3 hover:border-ucf-gold/40 hover:bg-app-surface-raised transition-colors duration-200 group"
+      >
+        <div className="w-9 h-9 bg-ucf-gold/10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-ucf-gold/15 transition-colors duration-200">
+          <Users className="w-4 h-4 text-ucf-gold" />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="font-medium text-white text-sm tracking-tight truncate">{g.name}</p>
+            <span className="text-xs text-gray-600 shrink-0">{memberCount} / {g.max_members}</span>
+          </div>
+
+          {g.courses && (
+            <p className="text-xs text-ucf-gold/80 mt-0.5 truncate">
+              {g.courses.code}
+              {g.courses.name && g.courses.name !== g.courses.code && (
+                <span className="text-gray-600"> · {g.courses.name}</span>
+              )}
+              {g.professor && <span className="text-gray-500"> · {g.professor}</span>}
+            </p>
+          )}
+
+          <div className="flex items-center justify-between gap-3 mt-1.5">
+            <p className="text-xs text-gray-600 truncate">
+              {preview ? (
+                <>
+                  {preview} <span className="text-gray-700">· {timeAgo(lastMsg.created_at)}</span>
+                </>
+              ) : (
+                <span className="text-gray-700 italic">No messages yet</span>
+              )}
+            </p>
+            {nextSession && (
+              <span className="text-xs text-gray-600 shrink-0 flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {formatSessionDate(nextSession.start_time)}
+              </span>
+            )}
+          </div>
+        </div>
+      </Link>
+    </motion.div>
+  )
+}
+
+function GroupCard({ g, userId, groupMeta }) {
+  const { memberCount, lastMsg, nextSession, preview } = computeGroupCardMeta(g, groupMeta, userId)
+  return (
+    <motion.div
+      variants={dashFadeUp}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      whileHover={{ y: -4 }}
+      className="h-full"
+    >
+      <Link
+        to={`/groups/${g.id}`}
+        className="card border border-app-border rounded-2xl p-5 flex flex-col h-full hover:border-ucf-gold/40 hover:bg-app-surface-raised transition-colors duration-200 group"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="w-9 h-9 bg-ucf-gold/10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-ucf-gold/15 transition-colors duration-200">
+            <Users className="w-4 h-4 text-ucf-gold" />
+          </div>
+          <span className="text-xs text-gray-600">{memberCount} / {g.max_members}</span>
+        </div>
+
+        <p className="font-medium text-white text-sm tracking-tight truncate mb-1">{g.name}</p>
+
+        {g.courses && (
+          <p className="text-xs text-ucf-gold/80 truncate mb-1">
+            {g.courses.code}
+            {g.courses.name && g.courses.name !== g.courses.code && (
+              <span className="text-gray-600"> · {g.courses.name}</span>
+            )}
+          </p>
+        )}
+        {g.professor && <p className="text-xs text-gray-500 truncate mb-3">{g.professor}</p>}
+
+        <div className="mt-auto pt-3 border-t border-app-border/60">
+          <p className="text-xs text-gray-600 truncate">
+            {preview ? (
+              <>
+                {preview} <span className="text-gray-700">· {timeAgo(lastMsg.created_at)}</span>
+              </>
+            ) : (
+              <span className="text-gray-700 italic">No messages yet</span>
+            )}
+          </p>
+          {nextSession && (
+            <span className="text-xs text-gray-600 mt-1.5 flex items-center gap-1">
+              <Calendar className="w-3 h-3" />
+              {formatSessionDate(nextSession.start_time)}
+            </span>
+          )}
+        </div>
+      </Link>
+    </motion.div>
+  )
+}
+
 export default function Dashboard() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('home')
+  const location = useLocation()
+  const [activeTab, setActiveTab] = useState(location.state?.tab || 'home')
   const [pendingQuiz, setPendingQuiz] = useState(null) // { quizId, sessionTitle }
   const [sessionReminder, setSessionReminder] = useState(null)
   const [isTA, setIsTA] = useState(false)
@@ -199,58 +333,64 @@ export default function Dashboard() {
         {(pendingQuiz || sessionReminder) && (
           <div className="sticky top-0 z-10 flex flex-col shrink-0">
             {pendingQuiz && (
-              <div className="bg-ucf-gold/10 border-b border-ucf-gold/25 px-8 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Target className="w-4 h-4 text-ucf-gold shrink-0" />
-                  <p className="text-sm text-white">
-                    Your KnightCheck is ready — see how much you retained from{' '}
-                    <span className="text-ucf-gold font-medium">{pendingQuiz.sessionTitle}</span> 🎯
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 ml-4">
-                  <button
-                    onClick={() => navigate(`/quiz/${pendingQuiz.quizId}`)}
-                    className="text-xs bg-ucf-gold text-black font-bold px-3 py-1.5 rounded-xl hover:bg-yellow-400 transition-colors duration-200"
-                  >
-                    Take Quiz
-                  </button>
-                  <button onClick={() => setPendingQuiz(null)} className="text-gray-500 hover:text-gray-300 transition-colors">
-                    <X className="w-4 h-4" />
-                  </button>
+              <div className="relative border-b border-ucf-gold/25 bg-app-surface">
+                <div className="absolute inset-0 bg-ucf-gold/10 pointer-events-none" />
+                <div className="relative px-8 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Target className="w-4 h-4 text-ucf-gold shrink-0" />
+                    <p className="text-sm text-white">
+                      Your KnightCheck is ready — see how much you retained from{' '}
+                      <span className="text-ucf-gold font-medium">{pendingQuiz.sessionTitle}</span> 🎯
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-4">
+                    <button
+                      onClick={() => navigate(`/quiz/${pendingQuiz.quizId}`)}
+                      className="text-xs bg-ucf-gold text-black font-bold px-3 py-1.5 rounded-xl hover:bg-yellow-400 transition-colors duration-200"
+                    >
+                      Take Quiz
+                    </button>
+                    <button onClick={() => setPendingQuiz(null)} className="text-gray-500 hover:text-gray-300 transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
             {sessionReminder && (() => {
               const sType = sessionReminder.session_type || (sessionReminder.is_virtual ? 'online' : 'in_person')
               return (
-                <div className="bg-ucf-gold/10 border-b border-ucf-gold/25 px-8 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Clock className="w-4 h-4 text-ucf-gold shrink-0" />
-                    <p className="text-sm text-white">
-                      <span className="font-medium text-ucf-gold">{sessionReminder.title}</span> starts in 30 min
-                      {sType === 'in_person' && sessionReminder.location && (
-                        <> 📍 {sessionReminder.location}</>
+                <div className="relative border-b border-ucf-gold/25 bg-app-surface">
+                  <div className="absolute inset-0 bg-ucf-gold/10 pointer-events-none" />
+                  <div className="relative px-8 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Clock className="w-4 h-4 text-ucf-gold shrink-0" />
+                      <p className="text-sm text-white">
+                        <span className="font-medium text-ucf-gold">{sessionReminder.title}</span> starts in 30 min
+                        {sType === 'in_person' && sessionReminder.location && (
+                          <> 📍 {sessionReminder.location}</>
+                        )}
+                        {sType === 'hybrid' && sessionReminder.location && (
+                          <> — 📍 {sessionReminder.location}</>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-4">
+                      {(sType === 'hybrid' || sType === 'online') && sessionReminder.meeting_url && (
+                        <a
+                          href={sessionReminder.meeting_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs bg-ucf-gold text-black font-bold px-3 py-1.5 rounded-xl hover:bg-yellow-400 transition-colors duration-200 flex items-center gap-1.5"
+                        >
+                          <Video className="w-3 h-3" />
+                          {sType === 'hybrid' ? 'Join Online →' : 'Join Meeting →'}
+                        </a>
                       )}
-                      {sType === 'hybrid' && sessionReminder.location && (
-                        <> — 📍 {sessionReminder.location}</>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-4">
-                    {(sType === 'hybrid' || sType === 'online') && sessionReminder.meeting_url && (
-                      <a
-                        href={sessionReminder.meeting_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs bg-ucf-gold text-black font-bold px-3 py-1.5 rounded-xl hover:bg-yellow-400 transition-colors duration-200 flex items-center gap-1.5"
-                      >
-                        <Video className="w-3 h-3" />
-                        {sType === 'hybrid' ? 'Join Online →' : 'Join Meeting →'}
-                      </a>
-                    )}
-                    <button onClick={() => setSessionReminder(null)} className="text-gray-500 hover:text-gray-300 transition-colors">
-                      <X className="w-4 h-4" />
-                    </button>
+                      <button onClick={() => setSessionReminder(null)} className="text-gray-500 hover:text-gray-300 transition-colors">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )
@@ -278,6 +418,11 @@ function HomeTab({ firstName, isTA }) {
   const [groupMeta, setGroupMeta] = useState({})
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  // Remembered across visits so the layout choice sticks.
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('ks:groupViewMode') || 'rows')
+  useEffect(() => {
+    localStorage.setItem('ks:groupViewMode', viewMode)
+  }, [viewMode])
 
   useEffect(() => {
     if (!user) return
@@ -364,9 +509,20 @@ function HomeTab({ firstName, isTA }) {
       <h1 className="text-2xl font-semibold tracking-tight mb-1 text-white">Good to see you, {firstName}!</h1>
       <p className="text-sm text-gray-500 mb-6">Here's what's happening with your study groups.</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <motion.div
+        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+        initial="hidden"
+        animate="visible"
+        variants={dashStagger}
+      >
         {statCards.map(({ label, value, icon: Icon }) => (
-          <div key={label} className="card border border-app-border rounded-2xl p-6">
+          <motion.div
+            key={label}
+            variants={dashFadeUp}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            whileHover={{ y: -4 }}
+            className="card border border-app-border rounded-2xl p-6 hover:border-ucf-gold/30 transition-colors duration-200"
+          >
             <div className="mb-5">
               <div className="w-9 h-9 bg-ucf-gold/10 rounded-xl flex items-center justify-center">
                 <Icon className="w-4 h-4 text-ucf-gold" />
@@ -374,9 +530,9 @@ function HomeTab({ firstName, isTA }) {
             </div>
             <p className="text-4xl font-bold tracking-tight text-white">{value}</p>
             <p className="text-xs text-gray-600 mt-2 uppercase tracking-widest font-medium">{label}</p>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
       <DashDivider />
 
@@ -385,80 +541,64 @@ function HomeTab({ firstName, isTA }) {
           <h2 className="text-base font-semibold tracking-tight text-white">My Study Groups</h2>
           <p className="text-xs text-gray-500 mt-0.5">Click a group to open the chat</p>
         </div>
-        {isTA && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 bg-ucf-gold text-black font-bold px-3.5 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
-          >
-            <Plus className="w-3.5 h-3.5" /> New Group
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!loading && groups.length > 0 && (
+            <div className="flex items-center gap-0.5 bg-app-input border border-app-border rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode('rows')}
+                aria-label="List view"
+                aria-pressed={viewMode === 'rows'}
+                className={`p-1.5 rounded-md transition-colors duration-150 ${
+                  viewMode === 'rows' ? 'bg-ucf-gold/15 text-ucf-gold' : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setViewMode('cards')}
+                aria-label="Card view"
+                aria-pressed={viewMode === 'cards'}
+                className={`p-1.5 rounded-md transition-colors duration-150 ${
+                  viewMode === 'cards' ? 'bg-ucf-gold/15 text-ucf-gold' : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          {isTA && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-1.5 bg-ucf-gold text-black font-bold px-3.5 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
+            >
+              <Plus className="w-3.5 h-3.5" /> New Group
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
-        <div className="text-gray-600 text-sm py-8 text-center">Loading…</div>
-      ) : groups.length > 0 ? (
-        <div className="space-y-2">
-          {groups.map((g) => {
-            const memberCount = groupMeta.memberCounts?.[g.id] ?? '—'
-            const lastMsg = groupMeta.lastMessages?.[g.id]
-            const nextSession = groupMeta.nextSessions?.[g.id]
-            const isOwnMsg = lastMsg?.user_id === user.id
-            const senderLabel = isOwnMsg ? 'You' : (lastMsg?.users?.full_name?.split(' ')[0] ?? null)
-            const preview = lastMsg
-              ? `${senderLabel ? senderLabel + ': ' : ''}${lastMsg.content.length > 48 ? lastMsg.content.slice(0, 48) + '…' : lastMsg.content}`
-              : null
-
-            return (
-              <Link
-                key={g.id}
-                to={`/groups/${g.id}`}
-                className="card border border-app-border rounded-2xl p-4 flex items-center gap-3 hover:border-ucf-gold/40 hover:bg-app-surface-raised transition-colors duration-200 group"
-              >
-                <div className="w-9 h-9 bg-ucf-gold/10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-ucf-gold/15 transition-colors duration-200">
-                  <Users className="w-4 h-4 text-ucf-gold" />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  {/* Row 1: name + member count */}
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="font-medium text-white text-sm tracking-tight truncate">{g.name}</p>
-                    <span className="text-xs text-gray-600 shrink-0">{memberCount} / {g.max_members}</span>
-                  </div>
-
-                  {/* Row 2: course + professor */}
-                  {g.courses && (
-                    <p className="text-xs text-ucf-gold/80 mt-0.5 truncate">
-                      {g.courses.code}
-                      {g.courses.name && g.courses.name !== g.courses.code && (
-                        <span className="text-gray-600"> · {g.courses.name}</span>
-                      )}
-                      {g.professor && (
-                        <span className="text-gray-500"> · {g.professor}</span>
-                      )}
-                    </p>
-                  )}
-
-                  {/* Row 3: last message + next session */}
-                  <div className="flex items-center justify-between gap-3 mt-1.5">
-                    <p className="text-xs text-gray-600 truncate">
-                      {preview
-                        ? <>{preview} <span className="text-gray-700">· {timeAgo(lastMsg.created_at)}</span></>
-                        : <span className="text-gray-700 italic">No messages yet</span>
-                      }
-                    </p>
-                    {nextSession && (
-                      <span className="text-xs text-gray-600 shrink-0 flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {formatSessionDate(nextSession.start_time)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
+        <div className={viewMode === 'cards' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-2'}>
+          {[0, 1, 2].map((i) => (
+            <SkeletonBlock key={i} className={viewMode === 'cards' ? 'h-40' : 'h-[76px]'} />
+          ))}
         </div>
+      ) : groups.length > 0 ? (
+        <motion.div
+          key={viewMode}
+          initial="hidden"
+          animate="visible"
+          variants={dashStagger}
+          className={viewMode === 'cards' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-2'}
+        >
+          {groups.map((g) =>
+            viewMode === 'cards' ? (
+              <GroupCard key={g.id} g={g} userId={user.id} groupMeta={groupMeta} />
+            ) : (
+              <GroupRow key={g.id} g={g} userId={user.id} groupMeta={groupMeta} />
+            )
+          )}
+        </motion.div>
       ) : (
         <div className="card border border-app-border rounded-2xl p-8 text-center">
           <div className="w-12 h-12 bg-ucf-gold/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -531,7 +671,11 @@ function ProfileTab() {
                 <Icon className="w-4 h-4 text-ucf-gold" />
               </div>
             </div>
-            <p className="text-3xl font-bold tracking-tight text-white">{value}</p>
+            {loading ? (
+              <SkeletonLine className="h-7 w-14 mb-2" />
+            ) : (
+              <p className="text-3xl font-bold tracking-tight text-white">{value}</p>
+            )}
             <p className="text-xs text-gray-600 mt-2 uppercase tracking-widest font-medium">{label}</p>
           </div>
         ))}
@@ -542,7 +686,21 @@ function ProfileTab() {
       <h2 className="text-base font-semibold text-white mb-4">Quiz History</h2>
 
       {loading ? (
-        <div className="text-gray-600 text-sm py-8 text-center">Loading…</div>
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="card border border-app-border rounded-2xl p-4 flex items-center gap-4">
+              <SkeletonCircle className="w-12 h-12 rounded-xl" />
+              <div className="flex-1 min-w-0 space-y-2">
+                <SkeletonLine className="h-3.5 w-40" />
+                <SkeletonLine className="h-2.5 w-24" />
+              </div>
+              <div className="shrink-0 space-y-2">
+                <SkeletonLine className="h-3 w-8 ml-auto" />
+                <SkeletonLine className="h-2.5 w-14" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : results.length === 0 ? (
         <div className="card border border-app-border rounded-2xl p-8 text-center">
           <Target className="w-10 h-10 text-gray-700 mx-auto mb-3" />
@@ -695,7 +853,8 @@ function DiscoveryTab() {
   const normalizedQuery = normalizeForSearch(trimmed)
   const filtered = isSearching
     ? groups.filter((g) =>
-        normalizeForSearch(g.courses?.code ?? '').includes(normalizedQuery)
+        normalizeForSearch(g.courses?.code ?? '').includes(normalizedQuery) ||
+        normalizeForSearch(g.professor ?? '').includes(normalizedQuery)
       )
     : groups
 
@@ -713,7 +872,7 @@ function DiscoveryTab() {
         <input
           value={searchQuery}
           onChange={(e) => { setSearchQuery(e.target.value); setShowAll(false) }}
-          placeholder="Enter a course code (e.g. COP3502)…"
+          placeholder="Search by course code or professor…"
           className="w-full bg-app-input border border-app-border rounded-xl pl-10 pr-10 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition text-sm"
         />
         {searchQuery && (
@@ -727,7 +886,18 @@ function DiscoveryTab() {
       </div>
 
       {loading ? (
-        <div className="text-gray-600 text-sm py-8 text-center">Loading groups…</div>
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="card border border-app-border rounded-2xl p-4 flex items-center gap-3">
+              <SkeletonCircle className="w-9 h-9 rounded-xl" />
+              <div className="flex-1 min-w-0 space-y-2">
+                <SkeletonLine className="h-3.5 w-32" />
+                <SkeletonLine className="h-2.5 w-48" />
+              </div>
+              <SkeletonLine className="h-7 w-16 shrink-0" />
+            </div>
+          ))}
+        </div>
       ) : isSearching ? (
         <div>
           <p className="text-sm font-semibold text-white mb-4">
@@ -750,8 +920,8 @@ function DiscoveryTab() {
           ) : (
             <div className="card border border-app-border rounded-2xl p-10 text-center">
               <Search className="w-10 h-10 text-gray-700 mx-auto mb-3" />
-              <p className="text-gray-400 text-sm">No study groups found for that course code.</p>
-              <p className="text-gray-600 text-xs mt-1">Try a different code or create a new group from the Home tab.</p>
+              <p className="text-gray-400 text-sm">No study groups found for that course code or professor.</p>
+              <p className="text-gray-600 text-xs mt-1">Try a different search or create a new group from the Home tab.</p>
             </div>
           )}
         </div>
@@ -984,11 +1154,15 @@ function SessionsTab() {
       if (!memberships || memberships.length === 0) { setLoading(false); return }
 
       const groupIds = memberships.map((m) => m.group_id)
+      const nowIso = new Date().toISOString()
       const { data } = await supabase
         .from('sessions')
         .select('*, groups(id, name, courses(code))')
         .in('group_id', groupIds)
-        .gte('start_time', new Date().toISOString())
+        // "Upcoming" = hasn't ended yet — includes sessions already in
+        // progress (start_time passed but end_time still ahead), not just
+        // ones that haven't started.
+        .or(`end_time.gte.${nowIso},and(end_time.is.null,start_time.gte.${nowIso})`)
         .order('start_time', { ascending: true })
 
       if (!data || data.length === 0) { setLoading(false); return }
@@ -1044,7 +1218,22 @@ function SessionsTab() {
       </div>
 
       {loading ? (
-        <div className="text-gray-500 text-sm py-10 text-center">Loading sessions…</div>
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="card border border-app-border rounded-2xl p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <SkeletonLine className="h-4 w-40" />
+                  <SkeletonLine className="h-2.5 w-28" />
+                </div>
+                <div className="shrink-0 space-y-2 text-right">
+                  <SkeletonLine className="h-3.5 w-20 ml-auto" />
+                  <SkeletonLine className="h-2.5 w-16 ml-auto" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : sessions.length === 0 ? (
         <div className="card border border-app-border rounded-2xl p-10 text-center">
           <Calendar className="w-12 h-12 text-gray-700 mx-auto mb-4" />
@@ -1067,7 +1256,7 @@ function SessionsTab() {
             return (
               <div
                 key={s.id}
-                onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`)}
+                onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`, { state: { from: 'dashboard-sessions' } })}
                 className="card border border-app-border rounded-2xl p-5 cursor-pointer hover:border-ucf-gold/30 transition-colors duration-200"
               >
                 <div className="flex items-start gap-3">

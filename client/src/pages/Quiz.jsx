@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle, XCircle, Target, Zap, Trophy, BookOpen } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { SkeletonLine } from '../components/Skeleton'
 
 export default function Quiz() {
   const { quizId } = useParams()
@@ -98,8 +99,29 @@ export default function Quiz() {
   }
 
   if (phase === 'loading') return (
-    <div className="h-screen bg-app-bg flex items-center justify-center">
-      <div className="text-gray-500 text-sm">Loading quiz…</div>
+    <div className="min-h-screen bg-app-bg flex flex-col">
+      <header className="relative z-10 px-6 py-4 border-b border-app-border flex items-center gap-4 shrink-0">
+        <ArrowLeft className="w-5 h-5 text-gray-700" />
+        <div className="flex-1 space-y-2">
+          <div className="flex items-center justify-between">
+            <SkeletonLine className="h-3.5 w-24" />
+            <SkeletonLine className="h-2.5 w-20" />
+          </div>
+          <SkeletonLine className="h-1.5 w-full rounded-full" />
+        </div>
+      </header>
+      <main className="relative z-10 flex-1 flex flex-col items-center px-4 py-10">
+        <div className="w-full max-w-lg">
+          <SkeletonLine className="h-5 w-24 rounded-full mb-5" />
+          <SkeletonLine className="h-5 w-full mb-2" />
+          <SkeletonLine className="h-5 w-2/3 mb-7" />
+          <div className="space-y-3">
+            {[0, 1, 2, 3].map((i) => (
+              <SkeletonLine key={i} className="h-[52px] w-full rounded-2xl" />
+            ))}
+          </div>
+        </div>
+      </main>
     </div>
   )
 
