@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BookOpen, Users, Brain, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, Zap, CheckCircle, Trophy, Clock, Video, ChevronDown, List, LayoutGrid } from 'lucide-react'
+import { BookOpen, Users, Brain, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, Zap, CheckCircle, Trophy, Clock, Video, ChevronDown, List, LayoutGrid, Pencil } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import CreateGroupModal from '../components/CreateGroupModal'
 import ScheduleSessionModal from '../components/ScheduleSessionModal'
+import EditNameModal from '../components/EditNameModal'
 import { normalizeForSearch } from '../lib/courseCode'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 
@@ -168,10 +169,23 @@ export default function Dashboard() {
   const [sessionReminder, setSessionReminder] = useState(null)
   const [isTA, setIsTA] = useState(false)
 
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [showEditName, setShowEditName] = useState(false)
+  const accountMenuRef = useRef(null)
+
   const handleSignOut = async () => {
     await signOut()
     navigate('/')
   }
+
+  useEffect(() => {
+    if (!accountMenuOpen) return
+    function handler(e) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target)) setAccountMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [accountMenuOpen])
 
   useEffect(() => {
     if (!user) return
@@ -302,31 +316,61 @@ export default function Dashboard() {
           ))}
         </nav>
 
-        <div className="p-2 border-t border-app-border">
-          <div className={`flex items-center p-2 rounded-xl bg-app-surface-raised mb-1 ${sidebarExpanded ? 'gap-3' : 'justify-center'}`}>
+        <div className="p-2 border-t border-app-border relative" ref={accountMenuRef}>
+          <button
+            onClick={() => setAccountMenuOpen((o) => !o)}
+            className={`w-full flex items-center p-2 rounded-xl transition-colors duration-200 ${sidebarExpanded ? 'gap-3' : 'justify-center'} ${accountMenuOpen ? 'bg-app-surface-raised' : 'hover:bg-app-surface-raised'}`}
+          >
             <div className="w-8 h-8 bg-ucf-gold/20 rounded-full flex items-center justify-center shrink-0">
               <span className="text-ucf-gold text-sm font-bold">
                 {firstName.charAt(0).toUpperCase()}
               </span>
             </div>
-            <div className={`min-w-0 overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0'}`}>
+            <div className={`min-w-0 overflow-hidden transition-all duration-200 text-left ${sidebarExpanded ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0'}`}>
               <p className="text-sm font-semibold text-white truncate leading-tight whitespace-nowrap">
                 {user?.user_metadata?.full_name || 'UCF Knight'}
               </p>
               <p className="text-xs text-gray-500 truncate whitespace-nowrap">{user?.email}</p>
             </div>
-          </div>
-          <button
-            onClick={handleSignOut}
-            className={`w-full flex items-center py-2 rounded-lg text-sm text-gray-500 hover:text-[#e8e8e8] hover:bg-app-surface-raised transition-all duration-200 ${sidebarExpanded ? 'px-3 gap-2 justify-start' : 'justify-center px-0'}`}
-          >
-            <LogOut className="w-4 h-4 shrink-0" />
-            <span className={`whitespace-nowrap overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'max-w-[100px] opacity-100' : 'max-w-0 opacity-0'}`}>
-              Sign out
-            </span>
           </button>
+
+          {accountMenuOpen && (
+            <div className="fixed bottom-[72px] left-2 w-60 card-elevated border rounded-xl shadow-xl z-30 py-1 overflow-hidden">
+              <button
+                onClick={() => { setActiveTab('profile'); setAccountMenuOpen(false) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+              >
+                <Target className="w-3.5 h-3.5" />
+                My KnightCheck Stats
+              </button>
+              <button
+                onClick={() => { setShowEditName(true); setAccountMenuOpen(false) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Edit name
+              </button>
+              <div className="my-1 mx-3 h-px bg-app-border" />
+              <button
+                onClick={handleSignOut}
+                className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </aside>
+
+      {showEditName && (
+        <EditNameModal
+          userId={user.id}
+          currentName={user?.user_metadata?.full_name || ''}
+          onClose={() => setShowEditName(false)}
+          onSaved={() => {}}
+        />
+      )}
 
       {/* Main */}
       <main className="flex-1 overflow-y-auto flex flex-col">
