@@ -9,7 +9,7 @@ import {
   useMotionTemplate,
   animate,
 } from 'framer-motion'
-import { BookOpen, Users, Brain, Calendar, MessageSquare, Shield, ArrowRight, ChevronRight } from 'lucide-react'
+import { BookOpen, Users, Target, Calendar, MessageSquare, Shield, ArrowRight, ChevronRight } from 'lucide-react'
 import Navbar from '../components/Navbar'
 
 const features = [
@@ -19,9 +19,9 @@ const features = [
     desc: 'Find classmates enrolled in your exact courses and form focused study groups in seconds.',
   },
   {
-    icon: Brain,
-    title: 'AI Tutor',
-    desc: 'Ask RetAIn anything about your coursework and get instant, accurate answers.',
+    icon: Target,
+    title: 'KnightCheck',
+    desc: 'AI-generated quizzes from your session notes and materials — check what you actually retained.',
   },
   {
     icon: MessageSquare,
@@ -56,7 +56,7 @@ const steps = [
   },
   {
     title: 'Study smarter together',
-    desc: 'Chat in realtime, schedule sessions, and ask the AI tutor for help — all in one place.',
+    desc: 'Chat in realtime, schedule sessions, and quiz yourself with KnightCheck — all in one place.',
   },
 ]
 
@@ -706,8 +706,8 @@ export default function Landing() {
                 transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
                 className="text-lg text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed"
               >
-                IgKnight connects UCF students through AI-powered study groups, realtime collaboration,
-                and an AI tutor that never sleeps.
+                IgKnight connects UCF students through study groups, realtime collaboration,
+                and AI-powered quizzes that check what you actually retained.
               </motion.p>
             </motion.div>
 

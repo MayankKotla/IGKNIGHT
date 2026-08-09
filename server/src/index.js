@@ -2,7 +2,6 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const express = require('express')
 const cors = require('cors')
 
-const aiRouter = require('./routes/ai')
 const { router: coursesRouter } = require('./routes/courses')
 const groupsRouter = require('./routes/groups')
 const quizRouter = require('./routes/quiz')
@@ -19,7 +18,6 @@ app.use(express.json())
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'IgKnight API' }))
 
-app.use('/api/ai', aiRouter)
 app.use('/api/courses', coursesRouter)
 app.use('/api/groups', groupsRouter)
 app.use('/api/quiz', quizRouter)

@@ -15,8 +15,10 @@ const supabaseAdmin = createClient(
 const UCF_CODE_RE = /^[A-Z]{2,4}\s\d{4}[A-Z]?$/
 
 function normalizeCourseCode(raw) {
-  const clean = raw.trim().toUpperCase().replace(/\s+/g, ' ')
-  // Insert space if user typed "COP3502C" instead of "COP 3502C"
+  // Strip ALL whitespace first (not just collapse it) so any uneven spacing —
+  // "COP  3502C", "COP 3502 C", "C OP3502C" — normalizes the same way, then
+  // re-insert a single canonical space between the letter prefix and digits.
+  const clean = raw.trim().toUpperCase().replace(/\s+/g, '')
   return clean.replace(/^([A-Z]{2,4})(\d{4}[A-Z]?)$/, '$1 $2')
 }
 

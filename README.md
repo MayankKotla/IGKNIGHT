@@ -4,21 +4,20 @@ AI-powered study groups exclusively for UCF students.
 
 ## What it is
 
-IgKnight connects UCF Knights through realtime study groups, session scheduling, and RetAIn — an AI study assistant powered by Claude. Access is restricted to `@ucf.edu` and `@knights.ucf.edu` email addresses.
+IgKnight connects UCF Knights through realtime study groups, session scheduling, and KnightCheck — AI-generated quizzes powered by Claude. Access is restricted to `@ucf.edu` and `@knights.ucf.edu` email addresses.
 
 ## Stack
 
 - **Frontend:** React + Tailwind CSS (Vite) — `/client`
 - **Backend:** Node.js + Express — `/server`
 - **Database / Auth / Realtime:** Supabase
-- **AI:** Anthropic Claude API (RetAIn tutor feature)
+- **AI:** Anthropic Claude API (KnightCheck quiz generation)
 
 ## Features
 
 - Study group discovery and creation (TAs only)
 - Realtime group chat
 - Session scheduling with Google Meet integration (hybrid/online sessions)
-- RetAIn — AI study assistant for course questions
 - KnightCheck — quiz generation from session content
 - Session detail pages with notes and file sharing
 

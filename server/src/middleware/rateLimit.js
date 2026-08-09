@@ -8,17 +8,6 @@ function keyByUser(req) {
   return req.user?.id || req.ip
 }
 
-// RetAIn chat — the highest-traffic AI feature. Generous enough for real
-// studying, tight enough to bound Anthropic API cost per person.
-const chatLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
-  limit: 20,
-  keyGenerator: keyByUser,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many messages to RetAIn — please wait a few minutes and try again.' },
-})
-
 // KnightCheck quiz generation — more expensive per call (longer prompt,
 // bigger response), and each session only needs to generate one quiz.
 const quizGenerateLimiter = rateLimit({
@@ -41,4 +30,4 @@ const aiUtilityLimiter = rateLimit({
   message: { error: 'Too many requests — please wait a while and try again.' },
 })
 
-module.exports = { chatLimiter, quizGenerateLimiter, aiUtilityLimiter }
+module.exports = { quizGenerateLimiter, aiUtilityLimiter }

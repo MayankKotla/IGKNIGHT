@@ -6,15 +6,17 @@ import { normalizeCourseCode, UCF_CODE_RE } from '../lib/courseCode'
 const API = import.meta.env.VITE_API_URL
 const MAX_MEMBERS = 200
 
-export default function CreateGroupModal({ onClose, onCreated }) {
+export default function CreateGroupModal({ onClose, onCreated, onGoToDiscover }) {
   const [courseCode, setCourseCode] = useState('')
   const [coursePreview, setCoursePreview] = useState(null) // { code, name, isNew? }
   const [codeStatus, setCodeStatus] = useState('idle') // idle | checking | valid | invalid
   const [groupName, setGroupName] = useState('')
-  const [professor, setProfessor] = useState('')
+  const [professorFirstName, setProfessorFirstName] = useState('')
+  const [professorLastName, setProfessorLastName] = useState('')
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [isDuplicate, setIsDuplicate] = useState(false)
   const debounceRef = useRef(null)
 
   // Live course lookup as user types
@@ -60,6 +62,7 @@ export default function CreateGroupModal({ onClose, onCreated }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setIsDuplicate(false)
 
     const normalized = normalizeCourseCode(courseCode)
     if (!UCF_CODE_RE.test(normalized)) {
@@ -70,8 +73,8 @@ export default function CreateGroupModal({ onClose, onCreated }) {
       setError('Group name is required.')
       return
     }
-    if (!professor.trim()) {
-      setError('Professor name is required.')
+    if (!professorFirstName.trim() || !professorLastName.trim()) {
+      setError("Professor's first and last name are required.")
       return
     }
 
@@ -89,14 +92,23 @@ export default function CreateGroupModal({ onClose, onCreated }) {
         body: JSON.stringify({
           course_code: normalized,
           name: groupName.trim(),
-          professor: professor.trim() || null,
+          professor_first_name: professorFirstName.trim(),
+          professor_last_name: professorLastName.trim(),
           description: description.trim() || null,
           max_members: MAX_MEMBERS,
         }),
       })
 
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to create group')
+      if (!res.ok) {
+        if (data.code === 'DUPLICATE_GROUP') {
+          setIsDuplicate(true)
+          setError(data.error)
+        } else {
+          throw new Error(data.error || 'Failed to create group')
+        }
+        return
+      }
       onCreated(data)
       onClose()
     } catch (err) {
@@ -124,7 +136,18 @@ export default function CreateGroupModal({ onClose, onCreated }) {
           {error && (
             <div className="flex items-start gap-2 bg-red-950/50 border border-red-800/50 rounded-xl p-3">
               <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
-              <p className="text-red-400 text-sm">{error}</p>
+              <div className="text-sm">
+                <p className="text-red-400">{error}</p>
+                {isDuplicate && onGoToDiscover && (
+                  <button
+                    type="button"
+                    onClick={onGoToDiscover}
+                    className="text-ucf-gold hover:underline font-medium mt-1"
+                  >
+                    Go to Discover →
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -190,6 +213,31 @@ export default function CreateGroupModal({ onClose, onCreated }) {
             )}
           </div>
 
+          {/* Professor */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">
+              Professor
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                value={professorFirstName}
+                onChange={(e) => setProfessorFirstName(e.target.value)}
+                placeholder="First name"
+                maxLength={40}
+                required
+                className="w-full bg-app-input border border-app-border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition"
+              />
+              <input
+                value={professorLastName}
+                onChange={(e) => setProfessorLastName(e.target.value)}
+                placeholder="Last name"
+                maxLength={40}
+                required
+                className="w-full bg-app-input border border-app-border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition"
+              />
+            </div>
+          </div>
+
           {/* Group name */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1.5">Group Name</label>
@@ -198,21 +246,6 @@ export default function CreateGroupModal({ onClose, onCreated }) {
               onChange={(e) => setGroupName(e.target.value)}
               placeholder="e.g. COP 3502C Morning Squad"
               maxLength={60}
-              className="w-full bg-app-input border border-app-border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition"
-            />
-          </div>
-
-          {/* Professor */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
-              Professor
-            </label>
-            <input
-              value={professor}
-              onChange={(e) => setProfessor(e.target.value)}
-              placeholder="e.g. Dr. Smith"
-              maxLength={80}
-              required
               className="w-full bg-app-input border border-app-border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition"
             />
           </div>
@@ -243,7 +276,7 @@ export default function CreateGroupModal({ onClose, onCreated }) {
             </button>
             <button
               type="submit"
-              disabled={submitting || codeStatus === 'invalid' || !courseCode.trim() || !professor.trim()}
+              disabled={submitting || codeStatus === 'invalid' || !courseCode.trim() || !professorFirstName.trim() || !professorLastName.trim()}
               className="flex-1 bg-ucf-gold text-black font-bold py-3 rounded-xl hover:bg-yellow-400 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               {submitting ? 'Creating…' : 'Create Group'}

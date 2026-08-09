@@ -50,21 +50,21 @@ router.get('/', async (req, res) => {
 })
 
 router.post('/', requireAuth, async (req, res) => {
-  const { data: profile } = await supabaseAdmin
-    .from('users')
-    .select('ucf_role')
-    .eq('id', req.user.id)
-    .single()
-
-  if (!profile || profile.ucf_role !== 'ta') {
-    return res.status(403).json({ error: 'Only Teaching Assistants can create groups.' })
-  }
-
-  const { name, description, professor, course_code, course_id: rawCourseId, is_public } = req.body
+  const {
+    name,
+    description,
+    professor_first_name,
+    professor_last_name,
+    course_code,
+    course_id: rawCourseId,
+    is_public,
+  } = req.body
   const MAX_MEMBERS = 200
 
   if (!name?.trim()) return res.status(400).json({ error: 'Group name is required' })
-  if (!professor?.trim()) return res.status(400).json({ error: 'Professor name is required' })
+  if (!professor_first_name?.trim() || !professor_last_name?.trim()) {
+    return res.status(400).json({ error: "Professor's first and last name are required" })
+  }
   if (!course_code?.trim() && !rawCourseId) return res.status(400).json({ error: 'Course code is required' })
 
   let course_id = rawCourseId ?? null
@@ -75,12 +75,36 @@ router.post('/', requireAuth, async (req, res) => {
     course_id = result.id
   }
 
+  const firstName = professor_first_name.trim()
+  const lastName = professor_last_name.trim()
+
+  // Duplicate-prevention: block only if a group already exists for the same
+  // course AND the same professor (matched case-insensitively). A group with
+  // the same course but a different professor, or the same professor but a
+  // different course, is allowed.
+  const { data: duplicate } = await supabaseAdmin
+    .from('groups')
+    .select('id')
+    .eq('course_id', course_id)
+    .ilike('professor_first_name', firstName)
+    .ilike('professor_last_name', lastName)
+    .limit(1)
+    .maybeSingle()
+
+  if (duplicate) {
+    return res.status(409).json({
+      error: 'A group already exists for this course and professor. Head to Discover to join it instead.',
+      code: 'DUPLICATE_GROUP',
+    })
+  }
+
   const { data: group, error: groupError } = await supabaseAdmin
     .from('groups')
     .insert({
       name: name.trim(),
       description,
-      professor: professor?.trim() || null,
+      professor_first_name: firstName,
+      professor_last_name: lastName,
       course_id,
       max_members: MAX_MEMBERS,
       is_public: is_public ?? true,

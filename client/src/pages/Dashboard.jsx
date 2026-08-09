@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BookOpen, Users, Brain, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, Zap, CheckCircle, Trophy, Clock, Video, ChevronDown, List, LayoutGrid, Pencil } from 'lucide-react'
+import { BookOpen, Users, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, Zap, CheckCircle, Trophy, Clock, Video, ChevronDown, List, LayoutGrid, Pencil } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import CreateGroupModal from '../components/CreateGroupModal'
@@ -14,9 +14,12 @@ const NAV = [
   { id: 'home', icon: BookOpen, label: 'Home' },
   { id: 'sessions', icon: Calendar, label: 'Sessions' },
   { id: 'discover', icon: Compass, label: 'Discover' },
-  { id: 'tutor', icon: Brain, label: 'RetAIn' },
   { id: 'profile', icon: Target, label: 'KnightCheck' },
 ]
+
+function formatProfessor(g) {
+  return [g?.professor_first_name, g?.professor_last_name].filter(Boolean).join(' ')
+}
 
 function DashDivider() {
   return (
@@ -79,7 +82,7 @@ function GroupRow({ g, userId, groupMeta }) {
               {g.courses.name && g.courses.name !== g.courses.code && (
                 <span className="text-gray-600"> · {g.courses.name}</span>
               )}
-              {g.professor && <span className="text-gray-500"> · {g.professor}</span>}
+              {formatProfessor(g) && <span className="text-gray-500"> · {formatProfessor(g)}</span>}
             </p>
           )}
 
@@ -136,7 +139,7 @@ function GroupCard({ g, userId, groupMeta }) {
             )}
           </p>
         )}
-        {g.professor && <p className="text-xs text-gray-500 truncate mb-3">{g.professor}</p>}
+        {formatProfessor(g) && <p className="text-xs text-gray-500 truncate mb-3">{formatProfessor(g)}</p>}
 
         <div className="mt-auto pt-3 border-t border-app-border/60">
           <p className="text-xs text-gray-600 truncate">
@@ -167,7 +170,6 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState(location.state?.tab || 'home')
   const [pendingQuiz, setPendingQuiz] = useState(null) // { quizId, sessionTitle }
   const [sessionReminder, setSessionReminder] = useState(null)
-  const [isTA, setIsTA] = useState(false)
 
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [showEditName, setShowEditName] = useState(false)
@@ -251,16 +253,6 @@ export default function Dashboard() {
       if (sessions?.length) setSessionReminder(sessions[0])
     }
     checkUpcomingReminders()
-  }, [user])
-
-  useEffect(() => {
-    if (!user) return
-    supabase
-      .from('users')
-      .select('ucf_role')
-      .eq('id', user.id)
-      .single()
-      .then(({ data }) => { if (data) setIsTA(data.ucf_role === 'ta') })
   }, [user])
 
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
@@ -443,10 +435,9 @@ export default function Dashboard() {
         )}
         <div className="flex-1 max-w-5xl w-full mx-auto px-8 py-10">
           <div key={activeTab} className="tab-enter">
-            {activeTab === 'home' && <HomeTab firstName={firstName} isTA={isTA} />}
+            {activeTab === 'home' && <HomeTab firstName={firstName} onGoToDiscover={() => setActiveTab('discover')} />}
             {activeTab === 'discover' && <DiscoveryTab />}
             {activeTab === 'sessions' && <SessionsTab />}
-            {activeTab === 'tutor' && <TutorTab />}
             {activeTab === 'profile' && <ProfileTab />}
           </div>
         </div>
@@ -455,7 +446,7 @@ export default function Dashboard() {
   )
 }
 
-function HomeTab({ firstName, isTA }) {
+function HomeTab({ firstName, onGoToDiscover }) {
   const { user } = useAuth()
   const [stats, setStats] = useState({ groups: 0, sessionsThisWeek: 0, newMessages: 0 })
   const [groups, setGroups] = useState([])
@@ -547,7 +538,14 @@ function HomeTab({ firstName, isTA }) {
   return (
     <div>
       {showModal && (
-        <CreateGroupModal onClose={() => setShowModal(false)} onCreated={handleGroupCreated} />
+        <CreateGroupModal
+          onClose={() => setShowModal(false)}
+          onCreated={handleGroupCreated}
+          onGoToDiscover={() => {
+            setShowModal(false)
+            onGoToDiscover()
+          }}
+        />
       )}
 
       <h1 className="text-2xl font-semibold tracking-tight mb-1 text-white">Good to see you, {firstName}!</h1>
@@ -610,14 +608,12 @@ function HomeTab({ firstName, isTA }) {
               </button>
             </div>
           )}
-          {isTA && (
-            <button
-              onClick={() => setShowModal(true)}
-              className="flex items-center gap-1.5 bg-ucf-gold text-black font-bold px-3.5 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
-            >
-              <Plus className="w-3.5 h-3.5" /> New Group
-            </button>
-          )}
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-1.5 bg-ucf-gold text-black font-bold px-3.5 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
+          >
+            <Plus className="w-3.5 h-3.5" /> New Group
+          </button>
         </div>
       </div>
 
@@ -649,19 +645,13 @@ function HomeTab({ firstName, isTA }) {
             <Users className="w-6 h-6 text-ucf-gold/60" />
           </div>
           <p className="text-sm font-medium text-white mb-1">No groups yet</p>
-          {isTA ? (
-            <>
-              <p className="text-xs text-gray-600 mb-5">Enter any UCF course code to get started.</p>
-              <button
-                onClick={() => setShowModal(true)}
-                className="inline-flex items-center gap-2 bg-ucf-gold text-black font-semibold px-4 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
-              >
-                <Plus className="w-4 h-4" /> Create your first group
-              </button>
-            </>
-          ) : (
-            <p className="text-xs text-gray-600">Use the Discover tab to find and join a study group.</p>
-          )}
+          <p className="text-xs text-gray-600 mb-5">Enter any UCF course code to get started, or find one in Discover.</p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 bg-ucf-gold text-black font-semibold px-4 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
+          >
+            <Plus className="w-4 h-4" /> Create your first group
+          </button>
         </div>
       )}
     </div>
@@ -815,8 +805,8 @@ function GroupDiscoveryCard({ group, isJoined, isJoining, onJoin }) {
             {group.courses.name && group.courses.name !== group.courses.code && (
               <span className="text-gray-600"> · {group.courses.name}</span>
             )}
-            {group.professor && (
-              <span className="text-gray-500"> · {group.professor}</span>
+            {formatProfessor(group) && (
+              <span className="text-gray-500"> · {formatProfessor(group)}</span>
             )}
           </p>
         )}
@@ -898,7 +888,7 @@ function DiscoveryTab() {
   const filtered = isSearching
     ? groups.filter((g) =>
         normalizeForSearch(g.courses?.code ?? '').includes(normalizedQuery) ||
-        normalizeForSearch(g.professor ?? '').includes(normalizedQuery)
+        normalizeForSearch(formatProfessor(g)).includes(normalizedQuery)
       )
     : groups
 
@@ -1016,141 +1006,6 @@ function DiscoveryTab() {
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-const SUGGESTED_PROMPTS = [
-  "Explain Big O notation with simple examples",
-  "What's the difference between a stack and a queue?",
-  "Walk me through integration by parts",
-  "How do I solve a system of linear equations?",
-  "Explain the time value of money",
-  "What are the key differences between mitosis and meiosis?",
-]
-
-function TutorTab() {
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: "Hi! I'm RetAIn, your AI study assistant. Ask me anything about your courses — I'm here to help you ace your classes!",
-    },
-  ])
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const { user } = useAuth()
-
-  const sendMessage = async (text) => {
-    if (!text.trim() || loading) return
-    setMessages((prev) => [...prev, { role: 'user', content: text }])
-    setLoading(true)
-
-    try {
-      const session = await import('../lib/supabase').then(({ supabase }) =>
-        supabase.auth.getSession()
-      )
-      const token = session.data.session?.access_token
-
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ai/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ message: text }),
-      })
-      const data = await res.json()
-      setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }])
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Sorry, I ran into an error. Please try again.' },
-      ])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleSend = (e) => {
-    e.preventDefault()
-    const text = input.trim()
-    setInput('')
-    sendMessage(text)
-  }
-
-  const isEmpty = messages.length === 1
-
-  return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 64px)' }}>
-      <div className="mb-6 shrink-0">
-        <h1 className="text-2xl font-semibold tracking-tight text-white">RetAIn</h1>
-        <p className="text-sm text-gray-500 mt-1">Powered by Claude — ask anything about your coursework</p>
-      </div>
-
-      <div className="flex-1 card border border-app-border rounded-2xl flex flex-col overflow-hidden min-h-0">
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-xl px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-ucf-gold text-black font-medium'
-                    : 'bg-app-input text-gray-100 border border-app-border'
-                }`}
-              >
-                {msg.content}
-              </div>
-            </div>
-          ))}
-
-          {isEmpty && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {SUGGESTED_PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  onClick={() => sendMessage(prompt)}
-                  disabled={loading}
-                  className="text-xs text-gray-300 bg-app-input border border-app-border hover:border-ucf-gold/40 hover:text-white px-3 py-2 rounded-xl transition-colors duration-150 text-left disabled:opacity-40"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-app-input border border-app-border px-4 py-3 rounded-2xl">
-                <div className="flex gap-1 items-center">
-                  {[0, 150, 300].map((delay) => (
-                    <span
-                      key={delay}
-                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                      style={{ animationDelay: `${delay}ms` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={handleSend} className="p-4 border-t border-app-border flex gap-3 shrink-0">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask @RetAIn a question..."
-            className="flex-1 bg-app-input border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 transition text-sm"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || loading}
-            className="bg-ucf-gold text-black font-bold px-5 py-3 rounded-xl hover:bg-yellow-400 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm shrink-0"
-          >
-            Send
-          </button>
-        </form>
-      </div>
     </div>
   )
 }
