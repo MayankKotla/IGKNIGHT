@@ -281,7 +281,7 @@ export default function Dashboard() {
             <div className="w-8 h-8 bg-ucf-gold/15 rounded-lg flex items-center justify-center shrink-0">
               <BookOpen className="h-4 w-4 text-ucf-gold" />
             </div>
-            <span className={`font-bold text-base text-white tracking-tight whitespace-nowrap transition-all duration-200 overflow-hidden ${sidebarExpanded ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0'}`}>
+            <span className={`font-bold text-base text-white tracking-tight uppercase whitespace-nowrap transition-all duration-200 overflow-hidden ${sidebarExpanded ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0'}`}>
               IgKnight
             </span>
           </Link>
@@ -301,7 +301,7 @@ export default function Dashboard() {
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 bg-ucf-gold rounded-r-full" />
               )}
               <Icon className="w-4 h-4 shrink-0" />
-              <span className={`whitespace-nowrap overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0'}`}>
+              <span className={`whitespace-nowrap overflow-hidden uppercase tracking-wide transition-all duration-200 ${sidebarExpanded ? 'max-w-[140px] opacity-100' : 'max-w-0 opacity-0'}`}>
                 {label}
               </span>
             </button>
@@ -548,7 +548,7 @@ function HomeTab({ firstName, onGoToDiscover }) {
         />
       )}
 
-      <h1 className="text-2xl font-semibold tracking-tight mb-1 text-white">Good to see you, {firstName}!</h1>
+      <h1 className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase">Good to see you, {firstName}!</h1>
       <p className="text-sm text-gray-500 mb-6">Here's what's happening with your study groups.</p>
 
       <motion.div
@@ -690,7 +690,7 @@ function ProfileTab() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-white mb-1">KnightCheck Stats</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-white mb-1 uppercase">KnightCheck Stats</h1>
       <p className="text-sm text-gray-500 mb-6">Your quiz performance across all study sessions</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -897,7 +897,7 @@ function DiscoveryTab() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-white mb-1">Discover Groups</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-white mb-1 uppercase">Discover Groups</h1>
       <p className="text-sm text-gray-500 mb-6">Find and join public study groups for your UCF courses</p>
 
       {/* Search */}
@@ -1105,7 +1105,7 @@ function SessionsTab() {
 
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Sessions</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-white uppercase">Sessions</h1>
           <p className="text-sm text-gray-500 mt-1">Upcoming study sessions across your groups</p>
         </div>
         <button

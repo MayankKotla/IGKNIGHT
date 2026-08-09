@@ -322,7 +322,7 @@ export default function GroupChat() {
             <button
               key={id}
               onClick={() => setTab(id)}
-              className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors duration-200 ${
+              className={`px-5 py-2.5 text-sm font-medium uppercase tracking-wide border-b-2 transition-colors duration-200 ${
                 tab === id ? 'border-ucf-gold text-ucf-gold' : 'border-transparent text-gray-500 hover:text-white'
               }`}
             >
@@ -461,7 +461,7 @@ export default function GroupChat() {
       {tab === 'sessions' && (
         <div className="flex-1 overflow-y-auto px-4 py-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-base font-semibold tracking-tight text-white">Study Sessions</h2>
+            <h2 className="text-base font-semibold tracking-tight text-white uppercase">Study Sessions</h2>
             <button
               onClick={() => setShowSessionModal(true)}
               className="flex items-center gap-1.5 bg-ucf-gold text-black font-bold px-3 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
@@ -507,7 +507,7 @@ export default function GroupChat() {
       {tab === 'participants' && (
         <div className="flex-1 overflow-y-auto px-4 py-6">
           <div className="mb-5">
-            <h2 className="text-base font-semibold tracking-tight text-white">Participants</h2>
+            <h2 className="text-base font-semibold tracking-tight text-white uppercase">Participants</h2>
             <p className="text-xs text-gray-500 mt-0.5">{memberCount} {memberCount === 1 ? 'member' : 'members'}</p>
           </div>
           <div className="space-y-2">
@@ -650,7 +650,7 @@ function InsightsTab({ groupId }) {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6">
       <div className="mb-6">
-        <h2 className="text-base font-semibold text-white">Leaderboard</h2>
+        <h2 className="text-base font-semibold text-white uppercase">Leaderboard</h2>
         <p className="text-xs text-gray-500 mt-0.5">Aggregate KnightCheck performance — individual scores are private</p>
       </div>
 

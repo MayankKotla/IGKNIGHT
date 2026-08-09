@@ -477,6 +477,20 @@ export default function Landing() {
   const heroScale = useTransform(heroProgress, [0, 1], [1, 0.4])
   const heroY = useTransform(heroProgress, [0, 1], [0, -70])
 
+  // Same trick, one section later: tracks scroll across Features' own
+  // natural extent — 0 when its top hits the top of the viewport (fully
+  // arrived), 1 when its bottom does (fully scrolled past). No separate
+  // pinned layer or spacer needed — the shrink/dim/drift-back is layered
+  // directly onto its ordinary scroll motion as it passes, so there's no
+  // gap between it and "How it works" arriving right underneath.
+  const { scrollYProgress: featuresRecedeProgress } = useScroll({
+    target: featuresRef,
+    offset: ['start start', 'end start'],
+  })
+  const featuresOpacity = useTransform(featuresRecedeProgress, [0, 1], [1, 0.5])
+  const featuresScale = useTransform(featuresRecedeProgress, [0, 1], [1, 0.4])
+  const featuresY = useTransform(featuresRecedeProgress, [0, 1], [0, -70])
+
   // Tracks scroll progress across the entire page (0 at top, 1 at bottom).
   // Drives the traveling key light — one continuous light source that
   // starts in the hero and drifts all the way down to the footer, so every
@@ -753,16 +767,22 @@ export default function Landing() {
       <div className="relative bg-app-bg" style={{ zIndex: 10 }}>
         <Divider />
 
-        {/* Features — full-screen like the hero. scroll-snap-align pairs with
-            the document-level scroll-snap-type set above: once you're
-            scrolling near this section, it locks cleanly to fill the
-            screen instead of stopping mid-way through it. */}
+        {/* Features — full-screen like the hero, and it recedes the same
+            way as you scroll past it: no gap, no separate pinned layer —
+            it's normal in-flow content like everything else here, just with
+            a shrink/dim/drift-back transform layered on top of its natural
+            scroll motion, tracked over the exact viewport-height of scroll
+            it takes to pass. "How it works" is right underneath in the DOM,
+            so it arrives in the same motion with nothing in between. */}
         <section
           ref={featuresRef}
           className="h-screen flex flex-col justify-center px-10"
           style={{ scrollSnapAlign: 'start' }}
         >
-          <div className="max-w-6xl mx-auto w-full">
+          <motion.div
+            className="max-w-6xl mx-auto w-full"
+            style={{ opacity: featuresOpacity, scale: featuresScale, y: featuresY }}
+          >
             {/* Heading reveal is tied directly to scroll position (not a
                 one-shot whileInView trigger) — it continuously resolves in
                 proportion to how far you've scrolled into the section, so
@@ -799,14 +819,14 @@ export default function Landing() {
             >
               <FeatureCarousel items={features} />
             </motion.div>
-          </div>
+          </motion.div>
         </section>
 
         <Divider />
 
-        {/* How it works */}
-        <section className="py-24 px-10 -mx-4" style={{ scrollSnapAlign: 'start' }}>
-          <div className="max-w-4xl mx-auto">
+        {/* How it works — full-screen like the hero and features sections. */}
+        <section className="h-screen flex flex-col justify-center px-10" style={{ scrollSnapAlign: 'start' }}>
+          <div className="max-w-4xl mx-auto w-full">
             <motion.div
               className="text-center mb-14"
               initial="hidden"

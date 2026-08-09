@@ -20,7 +20,7 @@ export default function Navbar() {
             <div className="w-8 h-8 bg-ucf-gold/15 rounded-lg flex items-center justify-center shrink-0">
               <BookOpen className="h-4 w-4 text-ucf-gold" />
             </div>
-            <span className="text-white font-bold text-base tracking-tight">IgKnight</span>
+            <span className="text-white font-bold text-base tracking-tight uppercase">IgKnight</span>
           </Link>
 
           <div className="flex items-center gap-3">
@@ -28,13 +28,13 @@ export default function Navbar() {
               <>
                 <Link
                   to="/dashboard"
-                  className="text-gray-400 hover:text-white text-sm font-medium transition-colors duration-200 px-3 py-1.5"
+                  className="text-gray-400 hover:text-white text-sm font-medium uppercase tracking-wide transition-colors duration-200 px-3 py-1.5"
                 >
                   Dashboard
                 </Link>
                 <button
                   onClick={handleSignOut}
-                  className="text-sm bg-ucf-gold text-black px-4 py-2 rounded-lg font-semibold hover:bg-yellow-400 transition-colors duration-200"
+                  className="text-sm bg-ucf-gold text-black px-4 py-2 rounded-lg font-semibold uppercase tracking-wide hover:bg-yellow-400 transition-colors duration-200"
                 >
                   Sign Out
                 </button>
@@ -43,15 +43,15 @@ export default function Navbar() {
               <>
                 <Link
                   to="/login"
-                  className="text-gray-400 hover:text-white text-sm font-medium transition-colors duration-200 px-3 py-1.5"
+                  className="text-gray-400 hover:text-white text-sm font-medium uppercase tracking-wide transition-colors duration-200 px-3 py-1.5"
                 >
                   Sign In
                 </Link>
                 <Link
                   to="/signup"
-                  className="text-sm bg-ucf-gold text-black px-4 py-2 rounded-lg font-semibold hover:bg-yellow-400 transition-colors duration-200"
+                  className="text-sm bg-ucf-gold text-black px-4 py-2 rounded-lg font-semibold uppercase tracking-wide hover:bg-yellow-400 transition-colors duration-200"
                 >
-                  Get Started
+                  Sign Up
                 </Link>
               </>
             )}
