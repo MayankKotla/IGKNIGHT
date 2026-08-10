@@ -20,11 +20,11 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const signUp = ({ email, password, fullName, ucfRole }) =>
+  const signUp = ({ email, password, fullName }) =>
     supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName, ucf_role: ucfRole } },
+      options: { data: { full_name: fullName } },
     })
 
   const signIn = ({ email, password }) =>

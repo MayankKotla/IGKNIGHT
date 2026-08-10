@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import {
   ArrowLeft, Send, Users, BookOpen, Calendar, Plus, Video, MapPin,
   MoreHorizontal, Crown, BellOff, Bell, Pin, PinOff, LogOut, Share2, Check, X,
-  Target, Zap, BarChart2, AlertCircle,
+  Target, Zap, BarChart2, AlertCircle, Paperclip, FileText, Download, Image as ImageIcon,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -30,6 +30,70 @@ function formatSessionTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatDateSeparator(iso) {
+  const d = new Date(iso)
+  const now = new Date()
+  const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+}
+
+function isSameDay(isoA, isoB) {
+  const a = new Date(isoA)
+  const b = new Date(isoB)
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+function formatFileSize(bytes) {
+  if (!bytes && bytes !== 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function isImageType(mimeType) {
+  if (!mimeType) return false
+  return ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/heic', 'image/heif', 'image/webp'].includes(mimeType.toLowerCase())
+}
+
+const ALLOWED_ATTACHMENT_TYPES = [
+  'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/heic', 'image/heif', 'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+]
+
+const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024
+
+function initialsFor(name) {
+  return (name || '?').charAt(0).toUpperCase()
+}
+
+function FileTypeIcon({ mimeType }) {
+  const isPdf = mimeType === 'application/pdf'
+  const isDoc = mimeType?.includes('word') || mimeType?.includes('document')
+  const isPpt = mimeType?.includes('powerpoint') || mimeType?.includes('presentation')
+
+  const [bg, border, color] = isPdf
+    ? ['bg-red-500/10', 'border-red-500/20', 'text-red-400']
+    : isDoc
+    ? ['bg-blue-500/10', 'border-blue-500/20', 'text-blue-400']
+    : isPpt
+    ? ['bg-orange-500/10', 'border-orange-500/20', 'text-orange-400']
+    : ['bg-gray-500/10', 'border-gray-500/20', 'text-gray-400']
+
+  return (
+    <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${bg} ${border}`}>
+      <FileText className={`w-4 h-4 ${color}`} />
+    </div>
+  )
+}
+
 export default function GroupChat() {
   const { id: groupId } = useParams()
   const navigate = useNavigate()
@@ -49,10 +113,15 @@ export default function GroupChat() {
 
   const [showSessionModal, setShowSessionModal] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [participantsOpen, setParticipantsOpen] = useState(false)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
+
+  const [signedUrls, setSignedUrls] = useState({})
+  const [uploadingFile, setUploadingFile] = useState(null)
+  const [attachError, setAttachError] = useState('')
 
   const [muted, setMuted] = useState(() => !!localStorage.getItem(`ks:muted:${groupId}`))
   const [pinnedMessage, setPinnedMessage] = useState(() => {
@@ -63,6 +132,8 @@ export default function GroupChat() {
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
   const menuRef = useRef(null)
+  const participantsRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     if (!user) return
@@ -96,7 +167,10 @@ export default function GroupChat() {
         allMembers.forEach((m) => { map[m.user_id] = { ...m.users, role: m.role } })
         setMembers(map)
       }
-      if (msgs) setMessages(msgs)
+      if (msgs) {
+        setMessages(msgs)
+        msgs.forEach((m) => { if (m.storage_path) generateSignedUrl(m) })
+      }
       if (sess) setSessions(sess)
       setLoading(false)
     }
@@ -111,10 +185,17 @@ export default function GroupChat() {
       .channel(`messages:group:${groupId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `group_id=eq.${groupId}` }, (payload) => {
         setMessages((prev) => prev.find((m) => m.id === payload.new.id) ? prev : [...prev, payload.new])
+        if (payload.new.storage_path) generateSignedUrl(payload.new)
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [groupId, isMember])
+
+  const generateSignedUrl = async (msg) => {
+    if (!msg.storage_path) return
+    const { data } = await supabase.storage.from('chat-uploads').createSignedUrl(msg.storage_path, 3600)
+    if (data?.signedUrl) setSignedUrls((prev) => ({ ...prev, [msg.id]: data.signedUrl }))
+  }
 
   useEffect(() => {
     if (tab === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -123,6 +204,7 @@ export default function GroupChat() {
   useEffect(() => {
     function handler(e) {
       if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false)
+      if (participantsRef.current && !participantsRef.current.contains(e.target)) setParticipantsOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -141,6 +223,84 @@ export default function GroupChat() {
     else setMessages((prev) => prev.filter((m) => m.id !== tempId))
     setSending(false)
     inputRef.current?.focus()
+  }
+
+  const handleAttachClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setAttachError('')
+
+    if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
+      setAttachError('That file type isn\'t supported.')
+      setTimeout(() => setAttachError(''), 4000)
+      return
+    }
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      setAttachError('File is too large (25MB max).')
+      setTimeout(() => setAttachError(''), 4000)
+      return
+    }
+
+    setUploadingFile({ name: file.name })
+    const timestamp = Date.now()
+    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
+    const storagePath = `${groupId}/${timestamp}_${safeName}`
+
+    const { error: storageError } = await supabase.storage
+      .from('chat-uploads')
+      .upload(storagePath, file, { upsert: false })
+
+    if (storageError) {
+      setUploadingFile(null)
+      setAttachError('Upload failed. Try again.')
+      setTimeout(() => setAttachError(''), 4000)
+      return
+    }
+
+    const tempId = `temp-${timestamp}`
+    const attachmentFields = {
+      file_name: file.name,
+      file_size: file.size,
+      file_type: file.type,
+      storage_path: storagePath,
+    }
+    setMessages((prev) => [...prev, {
+      id: tempId, group_id: groupId, user_id: user.id, content: null, type: 'text',
+      created_at: new Date().toISOString(), ...attachmentFields,
+    }])
+    setUploadingFile(null)
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({ group_id: groupId, user_id: user.id, content: null, type: 'text', ...attachmentFields })
+      .select()
+      .single()
+
+    if (!error && data) {
+      setMessages((prev) => prev.map((m) => m.id === tempId ? data : m))
+      generateSignedUrl(data)
+    } else {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId))
+    }
+  }
+
+  const handleDownloadFile = async (msg) => {
+    const { data } = await supabase.storage
+      .from('chat-uploads')
+      .createSignedUrl(msg.storage_path, 60, { download: true })
+    if (data?.signedUrl) {
+      const a = document.createElement('a')
+      a.href = data.signedUrl
+      a.download = msg.file_name
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    }
   }
 
   const handleSessionCreated = (session) => {
@@ -292,7 +452,7 @@ export default function GroupChat() {
       )}
 
       {/* Header */}
-      <header className="border-b border-app-border px-4 py-3 flex items-center gap-4 shrink-0">
+      <header className="border-b border-app-border px-4 py-3 flex items-center gap-4 shrink-0 relative">
         <Link to="/dashboard" className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-app-input transition-colors duration-200">
           <ArrowLeft className="w-5 h-5" />
         </Link>
@@ -303,44 +463,25 @@ export default function GroupChat() {
           <p className="font-semibold text-white truncate">{group?.name}</p>
           {group?.courses && <p className="text-xs text-ucf-gold">{group.courses.code}</p>}
         </div>
-        <div className="flex items-center gap-2 text-gray-500 text-xs shrink-0">
-          {muted && <BellOff className="w-3.5 h-3.5 text-gray-600" />}
-          <Users className="w-3.5 h-3.5" />
-          <span>{memberCount}</span>
-        </div>
-      </header>
+        {muted && <BellOff className="w-3.5 h-3.5 text-gray-600 shrink-0" />}
 
-      {/* Tab bar */}
-      <div className="border-b border-app-border flex items-center shrink-0">
-        <div className="flex flex-1">
-          {[
-            { id: 'chat', label: 'Chat' },
-            { id: 'sessions', label: `Sessions${upcoming.length ? ` (${upcoming.length})` : ''}` },
-            { id: 'participants', label: `Participants${memberCount ? ` (${memberCount})` : ''}` },
-            { id: 'insights', label: 'Leaderboard' },
-          ].map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`px-5 py-2.5 text-sm font-medium uppercase tracking-wide border-b-2 transition-colors duration-200 ${
-                tab === id ? 'border-ucf-gold text-ucf-gold' : 'border-transparent text-gray-500 hover:text-white'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative pr-3" ref={menuRef}>
+        <div className="relative shrink-0" ref={menuRef}>
           <button
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={() => { setMenuOpen((o) => !o); setParticipantsOpen(false) }}
             className={`p-1.5 rounded-lg transition-colors duration-200 ${menuOpen ? 'bg-app-input text-white' : 'text-gray-500 hover:text-white hover:bg-app-input'}`}
           >
             <MoreHorizontal className="w-4 h-4" />
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-48 card-elevated border rounded-xl shadow-xl z-20 py-1 overflow-hidden">
+            <div className="absolute right-0 top-full mt-1.5 w-52 card-elevated border rounded-xl shadow-xl z-30 py-1 overflow-hidden">
+              <button
+                onClick={() => { setParticipantsOpen(true); setMenuOpen(false) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+              >
+                <Users className="w-3.5 h-3.5" />
+                Participants{memberCount ? ` (${memberCount})` : ''}
+              </button>
               <button
                 onClick={toggleMute}
                 className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:text-white hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
@@ -366,14 +507,77 @@ export default function GroupChat() {
             </div>
           )}
         </div>
+
+        {participantsOpen && (
+          <div ref={participantsRef} className="absolute right-4 top-full mt-1.5 w-72 card-elevated border rounded-xl shadow-xl z-30 overflow-hidden">
+            <div className="px-4 py-3 border-b border-app-border flex items-center justify-between">
+              <p className="text-sm font-semibold text-white">Participants</p>
+              <p className="text-xs text-gray-500">{memberCount} {memberCount === 1 ? 'member' : 'members'}</p>
+            </div>
+            <div className="max-h-72 overflow-y-auto py-1">
+              {Object.entries(members)
+                .sort(([, a], [, b]) => (a.role === 'owner' ? -1 : b.role === 'owner' ? 1 : 0))
+                .map(([userId, member]) => {
+                  const name = member.full_name || member.email?.split('@')[0] || 'Unknown'
+                  const isOwnerRow = member.role === 'owner'
+                  const isYou = userId === user.id
+                  return (
+                    <div key={userId} className="px-4 py-2 flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-ucf-gold/15 flex items-center justify-center shrink-0">
+                        <span className="text-ucf-gold text-xs font-bold">{initialsFor(name)}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-medium text-white truncate">{name}</p>
+                          {isYou && <span className="text-[10px] text-gray-600 shrink-0">you</span>}
+                        </div>
+                        <p className="text-[11px] text-gray-600 truncate">{member.email}</p>
+                      </div>
+                      {isOwnerRow && <Crown className="w-3 h-3 text-ucf-gold shrink-0" />}
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* Tab bar */}
+      <div className="border-b border-app-border flex items-center shrink-0">
+        {[
+          { id: 'chat', label: 'Chat' },
+          { id: 'sessions', label: `Sessions${upcoming.length ? ` (${upcoming.length})` : ''}` },
+          { id: 'insights', label: 'Leaderboard' },
+        ].map(({ id, label }) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`px-5 py-2.5 text-sm font-medium uppercase tracking-wide border-b-2 transition-colors duration-200 ${
+              tab === id ? 'border-ucf-gold text-ucf-gold' : 'border-transparent text-gray-500 hover:text-white'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Chat tab */}
       {tab === 'chat' && (
-        <>
+        <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
+          {/* Subtle ambient glow — contained to this tab, doesn't bleed elsewhere */}
+          <div
+            className="absolute inset-x-0 top-0 pointer-events-none"
+            style={{
+              height: '320px',
+              background: 'radial-gradient(ellipse 70% 100% at 50% 0%, rgba(255,201,4,0.05) 0%, transparent 72%)',
+              zIndex: 0,
+            }}
+            aria-hidden="true"
+          />
+
           {/* Pinned message banner */}
           {pinnedMessage && (
-            <div className="border-b border-app-border bg-ucf-gold/5 px-4 py-2 flex items-start gap-2 shrink-0">
+            <div className="border-b border-app-border bg-ucf-gold/5 px-4 py-2 flex items-start gap-2 shrink-0 relative z-10">
               <Pin className="w-3.5 h-3.5 text-ucf-gold mt-0.5 shrink-0" />
               <p className="flex-1 text-xs text-gray-300 truncate">{pinnedMessage.content}</p>
               {isOwner && (
@@ -384,77 +588,195 @@ export default function GroupChat() {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          <div className="flex-1 overflow-y-auto px-4 py-6 relative z-10">
             {messages.length === 0 && (
-              <div className="text-center text-gray-600 text-sm pt-12">No messages yet. Say hello!</div>
+              <div className="text-center pt-16">
+                <div className="w-12 h-12 rounded-2xl bg-ucf-gold/10 flex items-center justify-center mx-auto mb-3">
+                  <Send className="w-5 h-5 text-ucf-gold/70" />
+                </div>
+                <p className="text-gray-400 text-sm font-medium">No messages yet</p>
+                <p className="text-gray-600 text-xs mt-1">Say hello to the group!</p>
+              </div>
             )}
-            {messages.map((msg) => {
+            {messages.map((msg, idx) => {
               const isOwn = msg.user_id === user.id
               const senderName = getSenderName(msg.user_id)
               const isPinned = pinnedMessage?.id === msg.id
+              const prev = messages[idx - 1]
+              const next = messages[idx + 1]
+              const GROUP_GAP_MS = 5 * 60 * 1000
+              const showDateSeparator = !prev || !isSameDay(prev.created_at, msg.created_at)
+              const isFirstInGroup =
+                showDateSeparator ||
+                prev.user_id !== msg.user_id ||
+                (new Date(msg.created_at) - new Date(prev.created_at)) > GROUP_GAP_MS
+              const isLastInGroup =
+                !next ||
+                !isSameDay(next.created_at, msg.created_at) ||
+                next.user_id !== msg.user_id ||
+                (new Date(next.created_at) - new Date(msg.created_at)) > GROUP_GAP_MS
+              const hasAttachment = !!msg.storage_path
+              const isImage = hasAttachment && isImageType(msg.file_type)
+              const signedUrl = signedUrls[msg.id]
 
               return (
-                <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group/msg`}>
-                  <div className={`max-w-sm lg:max-w-lg flex flex-col gap-1 ${isOwn ? 'items-end' : 'items-start'}`}>
-                    {!isOwn && senderName && (
-                      <span className="text-xs text-gray-500 px-1">{senderName}</span>
-                    )}
-                    <div className="flex items-end gap-1.5">
-                      {isOwn && isOwner && (
-                        <button
-                          onClick={() => isPinned ? handleUnpin() : handlePin(msg)}
-                          className="opacity-0 group-hover/msg:opacity-100 transition-opacity duration-150 p-1 text-gray-600 hover:text-ucf-gold"
-                          title={isPinned ? 'Unpin' : 'Pin message'}
-                        >
-                          {isPinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
-                        </button>
-                      )}
-                      <div
-                        className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                          msg.id?.toString().startsWith('temp-')
-                            ? 'bg-ucf-gold/60 text-black'
-                            : isOwn
-                            ? 'bg-ucf-gold text-black font-medium'
-                            : 'bg-app-input text-gray-100 border border-app-border'
-                        } ${isPinned ? 'ring-1 ring-ucf-gold/40' : ''}`}
-                      >
-                        {msg.content}
-                      </div>
-                      {!isOwn && isOwner && (
-                        <button
-                          onClick={() => isPinned ? handleUnpin() : handlePin(msg)}
-                          className="opacity-0 group-hover/msg:opacity-100 transition-opacity duration-150 p-1 text-gray-600 hover:text-ucf-gold"
-                          title={isPinned ? 'Unpin' : 'Pin message'}
-                        >
-                          {isPinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
-                        </button>
-                      )}
+                <React.Fragment key={msg.id}>
+                  {showDateSeparator && (
+                    <div className="flex items-center gap-3 py-3">
+                      <div className="flex-1 h-px bg-app-border" />
+                      <span className="text-[11px] text-gray-600 uppercase tracking-wide shrink-0">{formatDateSeparator(msg.created_at)}</span>
+                      <div className="flex-1 h-px bg-app-border" />
                     </div>
-                    <span className="text-xs text-gray-600 px-1">{formatTime(msg.created_at)}</span>
+                  )}
+                  <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isFirstInGroup ? 'mt-3' : 'mt-0.5'} group/msg`}>
+                    {!isOwn && (
+                      <div className="w-7 shrink-0 mr-2 self-end mb-0.5">
+                        {isFirstInGroup && (
+                          <div className="w-7 h-7 rounded-full bg-ucf-gold/15 flex items-center justify-center">
+                            <span className="text-ucf-gold text-[11px] font-bold">{initialsFor(senderName)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className={`max-w-sm lg:max-w-lg flex flex-col gap-1 ${isOwn ? 'items-end' : 'items-start'}`}>
+                      {!isOwn && isFirstInGroup && senderName && (
+                        <span className="text-xs text-gray-500 px-1">{senderName}</span>
+                      )}
+                      <div className="flex items-end gap-1.5">
+                        {isOwn && isOwner && (
+                          <button
+                            onClick={() => isPinned ? handleUnpin() : handlePin(msg)}
+                            className="opacity-0 group-hover/msg:opacity-100 transition-opacity duration-150 p-1 text-gray-600 hover:text-ucf-gold"
+                            title={isPinned ? 'Unpin' : 'Pin message'}
+                          >
+                            {isPinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
+                          </button>
+                        )}
+
+                        {hasAttachment ? (
+                          isImage ? (
+                            <a
+                              href={signedUrl || undefined}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`block rounded-2xl overflow-hidden border max-w-[240px] ${
+                                isOwn ? 'border-ucf-gold/30' : 'border-app-border'
+                              } ${isPinned ? 'ring-1 ring-ucf-gold/40' : ''}`}
+                            >
+                              {signedUrl ? (
+                                <img src={signedUrl} alt={msg.file_name || 'attachment'} className="w-full h-auto block" />
+                              ) : (
+                                <div className="w-[240px] h-[160px] bg-app-input flex items-center justify-center">
+                                  <ImageIcon className="w-6 h-6 text-gray-600" />
+                                </div>
+                              )}
+                              {msg.content && (
+                                <div className={`px-3 py-2 text-sm leading-relaxed ${isOwn ? 'bg-ucf-gold text-black font-medium' : 'bg-app-input text-gray-100'}`}>
+                                  {msg.content}
+                                </div>
+                              )}
+                            </a>
+                          ) : (
+                            <div
+                              className={`px-3 py-2.5 rounded-2xl border flex items-center gap-3 min-w-[220px] ${
+                                isOwn ? 'bg-ucf-gold/10 border-ucf-gold/30' : 'bg-app-input border-app-border'
+                              } ${isPinned ? 'ring-1 ring-ucf-gold/40' : ''}`}
+                            >
+                              <FileTypeIcon mimeType={msg.file_type} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-white font-medium truncate">{msg.file_name}</p>
+                                <p className="text-xs text-gray-500">{formatFileSize(msg.file_size)}</p>
+                              </div>
+                              <button
+                                onClick={() => handleDownloadFile(msg)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-ucf-gold hover:bg-app-bg transition-colors duration-150 shrink-0"
+                                title="Download"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )
+                        ) : (
+                          <div
+                            className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                              msg.id?.toString().startsWith('temp-')
+                                ? 'bg-ucf-gold/60 text-black'
+                                : isOwn
+                                ? 'bg-ucf-gold text-black font-medium'
+                                : 'bg-app-input text-gray-100 border border-app-border'
+                            } ${isPinned ? 'ring-1 ring-ucf-gold/40' : ''}`}
+                          >
+                            {msg.content}
+                          </div>
+                        )}
+
+                        {!isOwn && isOwner && (
+                          <button
+                            onClick={() => isPinned ? handleUnpin() : handlePin(msg)}
+                            className="opacity-0 group-hover/msg:opacity-100 transition-opacity duration-150 p-1 text-gray-600 hover:text-ucf-gold"
+                            title={isPinned ? 'Unpin' : 'Pin message'}
+                          >
+                            {isPinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
+                          </button>
+                        )}
+                      </div>
+                      {isLastInGroup && <span className="text-xs text-gray-600 px-1">{formatTime(msg.created_at)}</span>}
+                    </div>
                   </div>
-                </div>
+                </React.Fragment>
               )
             })}
             <div ref={bottomRef} />
           </div>
 
-          <form onSubmit={handleSend} className="border-t border-app-border px-4 py-3 flex gap-3 shrink-0">
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Message the group…"
-              className="flex-1 bg-app-input border border-app-border rounded-xl px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-ucf-gold/60 focus:ring-1 focus:ring-ucf-gold/25 transition-all duration-200 text-sm"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || sending}
-              className="bg-ucf-gold text-black font-bold px-4 py-2.5 rounded-xl hover:bg-yellow-400 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          <div className="border-t border-app-border px-4 py-3 shrink-0 relative z-10">
+            {uploadingFile && (
+              <div className="flex items-center gap-2 text-xs text-gray-500 mb-2 px-1">
+                <div className="w-3 h-3 border-2 border-gray-600 border-t-ucf-gold rounded-full animate-spin" />
+                Uploading {uploadingFile.name}…
+              </div>
+            )}
+            {attachError && (
+              <div className="flex items-center gap-1.5 text-xs text-red-400 mb-2 px-1">
+                <AlertCircle className="w-3.5 h-3.5" /> {attachError}
+              </div>
+            )}
+            <form
+              onSubmit={handleSend}
+              className="flex items-center gap-1 bg-app-input border border-app-border rounded-2xl pl-1.5 pr-1.5 py-1.5 focus-within:border-ucf-gold/60 focus-within:ring-1 focus-within:ring-ucf-gold/25 transition-all duration-200"
             >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
-        </>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileSelect}
+                accept={ALLOWED_ATTACHMENT_TYPES.join(',')}
+              />
+              <button
+                type="button"
+                onClick={handleAttachClick}
+                className="p-2 rounded-xl text-gray-500 hover:text-ucf-gold hover:bg-app-bg transition-colors duration-150 shrink-0"
+                title="Attach a file or image"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Message the group…"
+                className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none text-sm py-1.5"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || sending}
+                className="bg-ucf-gold text-black font-bold p-2.5 rounded-xl hover:bg-yellow-400 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Sessions tab */}
@@ -501,45 +823,6 @@ export default function GroupChat() {
       {/* Insights tab */}
       {tab === 'insights' && (
         <InsightsTab groupId={groupId} />
-      )}
-
-      {/* Participants tab */}
-      {tab === 'participants' && (
-        <div className="flex-1 overflow-y-auto px-4 py-6">
-          <div className="mb-5">
-            <h2 className="text-base font-semibold tracking-tight text-white uppercase">Participants</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{memberCount} {memberCount === 1 ? 'member' : 'members'}</p>
-          </div>
-          <div className="space-y-2">
-            {Object.entries(members)
-              .sort(([, a], [, b]) => (a.role === 'owner' ? -1 : b.role === 'owner' ? 1 : 0))
-              .map(([userId, member]) => {
-                const name = member.full_name || member.email?.split('@')[0] || 'Unknown'
-                const isOwnerRow = member.role === 'owner'
-                const isYou = userId === user.id
-                return (
-                  <div key={userId} className="card border border-app-border rounded-2xl px-4 py-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-ucf-gold/15 flex items-center justify-center shrink-0">
-                      <span className="text-ucf-gold text-sm font-bold">{name.charAt(0).toUpperCase()}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-white truncate">{name}</p>
-                        {isYou && <span className="text-xs text-gray-600 shrink-0">you</span>}
-                      </div>
-                      <p className="text-xs text-gray-600 truncate">{member.email}</p>
-                    </div>
-                    {isOwnerRow && (
-                      <div className="flex items-center gap-1 shrink-0 bg-ucf-gold/10 border border-ucf-gold/20 px-2 py-0.5 rounded-full">
-                        <Crown className="w-3 h-3 text-ucf-gold" />
-                        <span className="text-xs text-ucf-gold font-medium">Owner</span>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-          </div>
-        </div>
       )}
     </div>
   )

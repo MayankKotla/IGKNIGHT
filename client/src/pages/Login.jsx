@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { BookOpen, AlertCircle } from 'lucide-react'
+import { BookOpen, AlertCircle, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const UCF_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@(ucf\.edu|knights\.ucf\.edu)$/
@@ -43,13 +43,21 @@ export default function Login() {
         }}
       />
 
+      <Link
+        to="/"
+        className="absolute top-6 left-6 flex items-center gap-1.5 text-gray-500 hover:text-white transition-colors duration-200 text-sm font-medium"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back
+      </Link>
+
       <div className="w-full max-w-sm relative">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 justify-center mb-8">
           <div className="w-9 h-9 bg-ucf-gold/15 rounded-xl flex items-center justify-center shrink-0">
             <BookOpen className="h-4.5 w-4.5 text-ucf-gold" style={{ width: '18px', height: '18px' }} />
           </div>
-          <span className="text-white font-bold text-xl tracking-tight">IgKnight</span>
+          <span className="text-white font-bold text-xl tracking-tight uppercase">IgKnight</span>
         </Link>
 
         {/* Card */}

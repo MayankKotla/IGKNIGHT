@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpen, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react'
+import { BookOpen, AlertCircle, CheckCircle, Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const UCF_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@(ucf\.edu|knights\.ucf\.edu)$/
@@ -10,7 +10,6 @@ export default function Signup() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [ucfRole, setUcfRole] = useState('student')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
@@ -36,7 +35,7 @@ export default function Signup() {
     }
 
     setLoading(true)
-    const { error: authError } = await signUp({ email, password, fullName, ucfRole })
+    const { error: authError } = await signUp({ email, password, fullName })
     setLoading(false)
 
     if (authError) {
@@ -55,6 +54,13 @@ export default function Signup() {
             background: 'radial-gradient(ellipse 60% 50% at 50% 0%, rgba(255,201,4,0.08) 0%, transparent 70%)',
           }}
         />
+        <Link
+          to="/"
+          className="absolute top-6 left-6 flex items-center gap-1.5 text-gray-500 hover:text-white transition-colors duration-200 text-sm font-medium"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Link>
         <div className="w-full max-w-sm text-center relative">
           <div className="w-16 h-16 bg-ucf-gold/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
             <CheckCircle className="w-8 h-8 text-ucf-gold" />
@@ -83,13 +89,21 @@ export default function Signup() {
         }}
       />
 
+      <Link
+        to="/"
+        className="absolute top-6 left-6 flex items-center gap-1.5 text-gray-500 hover:text-white transition-colors duration-200 text-sm font-medium"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back
+      </Link>
+
       <div className="w-full max-w-sm relative">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 justify-center mb-8">
           <div className="w-9 h-9 bg-ucf-gold/15 rounded-xl flex items-center justify-center shrink-0">
             <BookOpen style={{ width: '18px', height: '18px' }} className="text-ucf-gold" />
           </div>
-          <span className="text-white font-bold text-xl tracking-tight">IgKnight</span>
+          <span className="text-white font-bold text-xl tracking-tight uppercase">IgKnight</span>
         </Link>
 
         {/* Card */}
@@ -120,31 +134,6 @@ export default function Signup() {
                 className="w-full bg-app-input border border-app-border rounded-xl px-4 py-2.5 text-[#e8e8e8] placeholder-gray-600 focus:outline-none focus:border-ucf-gold/60 focus:ring-1 focus:ring-ucf-gold/25 transition-all duration-200 text-sm"
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
-                I am a
-              </label>
-              <div className="flex gap-2">
-                {[
-                  { value: 'student', label: '🎓 Student' },
-                  { value: 'ta', label: '📚 Teaching Assistant' },
-                ].map(({ value, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setUcfRole(value)}
-                    className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all duration-200 ${
-                      ucfRole === value
-                        ? 'bg-ucf-gold text-black border-ucf-gold'
-                        : 'bg-app-input border-app-border text-gray-400 hover:text-white hover:border-gray-600'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
                 UCF Email
