@@ -45,18 +45,29 @@ const features = [
   },
 ]
 
+// Each step gets its own position in a slight zigzag (1 up-left, 2 down and
+// centered, 3 up-right, mirroring step 1) instead of sitting on one flat
+// row. Horizontal placement (desktop only — see .how-it-works-step-* in
+// index.css) sits at the halfway points of the screen: step 1 a quarter of
+// the way in from the left, step 3 a quarter of the way in from the right.
 const steps = [
   {
     title: 'Sign up with your UCF email',
     desc: 'Create your account using your @ucf.edu or @knights.ucf.edu address.',
+    stepClass: 'how-it-works-step-1',
+    numberBelow: false,
   },
   {
     title: 'Find your courses',
     desc: 'Browse the course catalog and join or create a study group for your class.',
+    stepClass: 'how-it-works-step-2',
+    numberBelow: true,
   },
   {
     title: 'Study smarter together',
     desc: 'Chat in realtime, schedule sessions, and quiz yourself with KnightCheck — all in one place.',
+    stepClass: 'how-it-works-step-3',
+    numberBelow: false,
   },
 ]
 
@@ -358,42 +369,64 @@ function FeatureCarousel({ items }) {
   )
 }
 
-function AnimatedStep({ title, desc, index, isLast }) {
+// A single stroked path — shaft and arrowhead drawn as one continuous
+// line — instead of a separate line element butted up against an icon,
+// which never quite reads as one shape (different stroke widths, and the
+// icon's own internal padding throws off the join).
+function ConnectorArrow() {
   return (
-    <>
+    <svg width="96" height="16" viewBox="0 0 96 16" fill="none">
+      <path
+        d="M2 8H88M88 8L78 1M88 8L78 15"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function AnimatedStep({ title, desc, index, stepClass, numberBelow = false }) {
+  // Big, bare number — no bubble, white instead of gold, with a soft glow
+  // behind it doing the work a border/fill circle used to.
+  const number = (
+    <motion.span
+      initial={{ opacity: 0, y: 12 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.6 }}
+      transition={{ type: 'spring', stiffness: 220, damping: 18, delay: index * 0.12 + 0.1 }}
+      className={`text-6xl font-extrabold text-white leading-none shrink-0 ${numberBelow ? 'mt-4' : 'mb-4'}`}
+      style={{ textShadow: '0 0 28px rgba(255,255,255,0.25)' }}
+    >
+      {index + 1}
+    </motion.span>
+  )
+
+  // Positioning (the CSS class below) lives on this plain outer div, not on
+  // the motion.div inside it. Framer Motion drives its animated elements via
+  // an inline `transform` style, which always wins over an external CSS
+  // `transform` rule — so putting both the zigzag offset AND the fade-up
+  // entrance animation's transform on the *same* element meant Framer's
+  // inline style silently overwrote the CSS one every time. Splitting them
+  // across two elements means neither one clobbers the other.
+  return (
+    <div className={`how-it-works-step ${stepClass} flex flex-col items-center text-center mb-10 md:mb-0 md:px-0 px-4`}>
       <motion.div
         variants={fadeUp}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="flex-1 flex flex-col items-center text-center px-4"
+        className="flex flex-col items-center text-center w-full"
       >
-        <motion.div
-          initial={{ scale: 0.6, opacity: 0 }}
-          whileInView={{ scale: 1, opacity: 1 }}
-          viewport={{ once: true, amount: 0.6 }}
-          transition={{ type: 'spring', stiffness: 260, damping: 16, delay: index * 0.12 + 0.1 }}
-          className="w-10 h-10 rounded-full border border-ucf-gold/50 bg-ucf-gold/10 flex items-center justify-center mb-5 shrink-0"
-        >
-          <span className="text-ucf-gold font-bold text-sm">{index + 1}</span>
-        </motion.div>
-        <h3 className="text-base font-semibold mb-2 text-white">{title}</h3>
-        <p className="text-gray-400 text-sm leading-relaxed">{desc}</p>
-      </motion.div>
-      {!isLast && (
-        <div className="hidden md:flex items-start pt-5 shrink-0">
-          <motion.div
-            initial={{ scaleX: 0 }}
-            whileInView={{ scaleX: 1 }}
-            viewport={{ once: true, amount: 0.6 }}
-            transition={{ duration: 0.6, delay: index * 0.12 + 0.3, ease: 'easeOut' }}
-            style={{
-              transformOrigin: 'left',
-              background: 'linear-gradient(to right, rgba(255,201,4,0.2), rgba(255,201,4,0.1))',
-            }}
-            className="w-16 h-px mt-0"
-          />
+        {!numberBelow && number}
+        {/* Fixed size so all three cards match regardless of description
+            length — text centers within instead of stretching the box. */}
+        <div className="card border border-app-border rounded-2xl p-5 w-[230px] h-40 flex flex-col justify-center">
+          <h3 className="text-base font-semibold mb-2 text-white">{title}</h3>
+          <p className="text-gray-400 text-sm leading-relaxed">{desc}</p>
         </div>
-      )}
-    </>
+        {numberBelow && number}
+      </motion.div>
+    </div>
   )
 }
 
@@ -824,36 +857,62 @@ export default function Landing() {
 
         <Divider />
 
-        {/* How it works — full-screen like the hero and features sections. */}
-        <section className="h-screen flex flex-col justify-center px-10" style={{ scrollSnapAlign: 'start' }}>
+        {/* How it works — full-screen like the hero and features sections.
+            pb pushes the vertically-centered content up within the section
+            (safer than a negative margin, which pushed the heading out of
+            view entirely last time). */}
+        <section className="h-screen flex flex-col justify-center px-10 pb-28" style={{ scrollSnapAlign: 'start' }}>
           <div className="max-w-4xl mx-auto w-full">
             <motion.div
-              className="text-center mb-14"
+              className="text-center mb-16"
               initial="hidden"
               whileInView="visible"
               viewport={{ once: true, amount: 0.5 }}
               variants={staggerContainer}
             >
-              <motion.h2 variants={fadeUp} transition={{ duration: 0.55 }} className="text-3xl font-bold mb-3 text-white">
+              <motion.h2 variants={fadeUp} transition={{ duration: 0.55 }} className="text-4xl font-bold mb-3 text-white">
                 How it works
               </motion.h2>
               <motion.p variants={fadeUp} transition={{ duration: 0.55 }} className="text-gray-400">
                 Up and running in under 2 minutes.
               </motion.p>
             </motion.div>
-
-            <motion.div
-              className="flex flex-col md:flex-row items-start gap-0"
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.2 }}
-              variants={staggerContainer}
-            >
-              {steps.map(({ title, desc }, i) => (
-                <AnimatedStep key={title} title={title} desc={desc} index={i} isLast={i === steps.length - 1} />
-              ))}
-            </motion.div>
           </div>
+
+          {/* Deliberately NOT nested inside the max-w-4xl column above — it
+              needs to span the section's full width so the 25%/50%/75%
+              positions on the steps below land at genuine screen halfway
+              points, not halfway points of the narrower heading column. On
+              mobile this is a plain stacked column. */}
+          <motion.div
+            className="how-it-works-steps relative w-full flex flex-col items-center md:block"
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, amount: 0.2 }}
+            variants={staggerContainer}
+          >
+            {steps.map(({ title, desc, stepClass, numberBelow }, i) => (
+              <AnimatedStep
+                key={title}
+                title={title}
+                desc={desc}
+                index={i}
+                stepClass={stepClass}
+                numberBelow={numberBelow}
+              />
+            ))}
+
+            {/* Arrows sit at the midpoints between the 25/50/75 stops — one
+                continuous stroked path (shaft + head together), not a
+                separate line div butted up against an icon, so it reads as
+                a single connector instead of two mismatched pieces. */}
+            <div className="how-it-works-arrow how-it-works-arrow-1 hidden md:block text-ucf-gold/60">
+              <ConnectorArrow />
+            </div>
+            <div className="how-it-works-arrow how-it-works-arrow-2 hidden md:block text-ucf-gold/60">
+              <ConnectorArrow />
+            </div>
+          </motion.div>
         </section>
 
         <Divider />

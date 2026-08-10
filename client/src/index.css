@@ -40,4 +40,52 @@
     border-color: #2e2e48;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(255, 201, 4, 0.04);
   }
+
+  /* Landing page "How it works" step layout. Each step has a fixed,
+     known width (230px card, no side padding), so it's centered on its
+     left% target with a fixed pixel margin-left (-115px = -half the
+     width) instead of `transform: translateX(-50%)` — percentage-based
+     transforms twice landed off-center for reasons that didn't hold up
+     under review, so this removes that percentage entirely in favor of
+     an exact, unambiguous number. Only the vertical nudge still uses a
+     transform (translateY), which was never reported as wrong. */
+  @media (min-width: 768px) {
+    .how-it-works-steps {
+      height: 26rem;
+    }
+    .how-it-works-step {
+      position: absolute;
+      top: 50%;
+      width: 230px;
+      margin-left: -115px;
+    }
+    .how-it-works-step-1 {
+      left: 25%;
+      transform: translateY(calc(-50% - 80px));
+    }
+    .how-it-works-step-2 {
+      left: 50%;
+      transform: translateY(calc(-50% + 130px));
+    }
+    .how-it-works-step-3 {
+      left: 75%;
+      transform: translateY(calc(-50% - 80px));
+    }
+    .how-it-works-arrow {
+      position: absolute;
+      top: 50%;
+      margin-left: -48px;
+    }
+    /* Angled to follow the zigzag: down-right from step 1 (up) into
+       step 2 (down), up-right from step 2 (down) into step 3 (up). Steeper
+       now that step 2 sits further down. */
+    .how-it-works-arrow-1 {
+      left: 37.5%;
+      transform: translateY(-50%) rotate(36deg);
+    }
+    .how-it-works-arrow-2 {
+      left: 62.5%;
+      transform: translateY(-50%) rotate(-36deg);
+    }
+  }
 }
