@@ -473,30 +473,21 @@ function FeatureCarousel({ items }) {
 }
 
 function AnimatedStep({ title, desc, index, stepClass }) {
-  // Positioning (the CSS class below) lives on this plain outer div, not on
-  // the motion.div inside it. Framer Motion drives its animated elements via
-  // an inline `transform` style, which always wins over an external CSS
-  // `transform` rule — so putting both the vertical offset AND the fade-up
-  // entrance animation's transform on the *same* element meant Framer's
-  // inline style silently overwrote the CSS one every time. Splitting them
-  // across two elements means neither one clobbers the other.
+  // Direct, self-contained initial/whileInView on this element itself —
+  // no variants, no relying on an ancestor's animation state. That's the
+  // exact same pattern already proven reliable elsewhere on this page (the
+  // "How it works" heading, the Features carousel). The earlier bug came
+  // from a CHILD depending on an inherited "hidden" variant from a distant
+  // parent, which could get stuck; a direct trigger on the element that's
+  // actually animating removes that dependency entirely. Staggered by
+  // index so the three cards fade up one after another rather than at once.
   return (
     <div className={`how-it-works-step ${stepClass} flex flex-col items-center text-center mb-10 md:mb-0 md:px-0 px-4`}>
       <motion.div
-        variants={fadeUp}
-        // initial={false} instead of relying on the "hidden" state inherited
-        // from the parent's whileInView propagation — this was the actual
-        // bug behind the title/description going missing: the propagated
-        // "hidden" variant (opacity: 0) was the state that stuck, so the
-        // whole card silently never became visible on the live page even
-        // though nothing looked wrong in the code. Starting from the
-        // component's natural (visible) state removes that failure mode
-        // entirely — the fade-up becomes a bonus if whileInView still fires
-        // correctly, not a requirement for the content to show at all.
-        initial={false}
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.2 }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        initial={{ opacity: 0, y: 30 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.4 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: index * 0.12 }}
         className="flex flex-col items-center text-center w-full"
       >
         {/* No more bare solid number here — the giant ghost numeral behind
@@ -608,6 +599,7 @@ export default function Landing() {
   const featuresHeadingOpacity = useTransform(featuresProgress, [0, 1], [0, 1])
   const featuresHeadingY = useTransform(featuresProgress, [0, 1], [60, 0])
   const featuresHeadingScale = useTransform(featuresProgress, [0, 1], [0.9, 1])
+
   const heroOpacity = useTransform(heroProgress, [0, 1], [1, 0.5])
   const heroScale = useTransform(heroProgress, [0, 1], [1, 0.4])
   const heroY = useTransform(heroProgress, [0, 1], [0, -70])
@@ -1010,11 +1002,31 @@ export default function Landing() {
             so it arrives in the same motion with nothing in between. */}
         <section
           ref={featuresRef}
-          className="h-screen flex flex-col justify-center px-10"
+          className="h-screen flex flex-col justify-center px-10 relative overflow-hidden"
           style={{ scrollSnapAlign: 'start' }}
         >
+          {/* Gentle light at the bottom edge of the section — a soft,
+              low-opacity glow, not the sharp traveling key light. Anchored
+              to bottom:0 of this section specifically (not the page), and
+              the section has overflow-hidden, so it's physically clipped
+              to this section's own box and can't bleed into "How it works"
+              below no matter how the section recedes/scrolls. Sits behind
+              the actual content via z-index (content below is given its
+              own z-10) rather than relying on DOM order, since a plain,
+              non-positioned element always paints behind a positioned one
+              regardless of DOM order — the same gotcha that caused the
+              gap bug between the hero and this section earlier. */}
+          <div
+            className="absolute inset-x-0 bottom-0 pointer-events-none"
+            style={{
+              height: '260px',
+              background: 'radial-gradient(ellipse 65% 100% at 50% 100%, rgba(255,201,4,0.07) 0%, transparent 72%)',
+              zIndex: 0,
+            }}
+            aria-hidden="true"
+          />
           <motion.div
-            className="max-w-6xl mx-auto w-full"
+            className="max-w-6xl mx-auto w-full relative z-10"
             style={{ opacity: featuresOpacity, scale: featuresScale, y: featuresY }}
           >
             {/* Heading reveal is tied directly to scroll position (not a
@@ -1067,7 +1079,10 @@ export default function Landing() {
             now much-taller steps container (bigger ghost numerals) starts
             pushing the bottom step cards toward/past the fold, so this
             can't grow a lot more without also shrinking the steps below. */}
-        <section className="h-screen flex flex-col justify-center px-10 pt-16" style={{ scrollSnapAlign: 'start' }}>
+        <section
+          className="h-screen flex flex-col justify-center px-10 pt-16"
+          style={{ scrollSnapAlign: 'start' }}
+        >
           <div className="max-w-4xl mx-auto w-full">
             <motion.div
               className="text-center mb-16"
@@ -1090,20 +1105,19 @@ export default function Landing() {
               positions on the steps below land at genuine screen halfway
               points, not halfway points of the narrower heading column. On
               mobile this is a plain stacked column. */}
-          <motion.div
-            className="how-it-works-steps relative w-full flex flex-col items-center md:block"
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.2 }}
-            variants={staggerContainer}
-          >
+          {/* Plain div, not animated — each AnimatedStep card now handles
+              its own fade-in directly (see AnimatedStep), so animating
+              this wrapper too would compound with the cards' own opacity/y
+              transitions and could make their own whileInView visibility
+              checks unstable while this parent is also still moving. */}
+          <div className="how-it-works-steps relative w-full flex flex-col items-center md:block">
             {/* Giant ghost numerals — huge, very low-opacity "1"/"2"/"3"
                 behind each step, filling the empty space as background
                 texture. Rendered first so they sit behind the actual
                 number/card content via DOM order. aria-hidden since
                 they're purely decorative and the real numbers (in
                 AnimatedStep) already convey the step order to screen
-                readers. */}
+                readers. Static (no fade) — only the cards animate. */}
             <div className="how-it-works-ghost how-it-works-ghost-1 hidden md:block" aria-hidden="true">1</div>
             <div className="how-it-works-ghost how-it-works-ghost-2 hidden md:block" aria-hidden="true">2</div>
             <div className="how-it-works-ghost how-it-works-ghost-3 hidden md:block" aria-hidden="true">3</div>
@@ -1117,7 +1131,7 @@ export default function Landing() {
                 stepClass={stepClass}
               />
             ))}
-          </motion.div>
+          </div>
         </section>
 
         <Divider />
