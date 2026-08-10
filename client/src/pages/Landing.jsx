@@ -87,6 +87,17 @@ const DUST_MOTES = [
   { leftPct: 72, topPct: 86, size: 3, depth: 0.7, duration: 10, delay: 0.9, xDrift: -10 },
   { leftPct: 50, topPct: 12, size: 2, depth: 0.5, duration: 12.5, delay: 1.5, xDrift: 7 },
   { leftPct: 64, topPct: 36, size: 3, depth: 0.6, duration: 11.5, delay: 0.4, xDrift: 11 },
+  // Added back in — the original lag turned out to be mostly battery/power
+  // mode (confirmed by the user), not this count specifically. Filling in
+  // gaps between the 8 above rather than clustering.
+  { leftPct: 40, topPct: 48, size: 2, depth: 0.5, duration: 10.5, delay: 2.1, xDrift: 8 },
+  { leftPct: 6, topPct: 40, size: 3, depth: 0.8, duration: 9.5, delay: 0.2, xDrift: -11 },
+  { leftPct: 95, topPct: 42, size: 2, depth: 0.6, duration: 12, delay: 1.1, xDrift: 10 },
+  { leftPct: 35, topPct: 8, size: 2, depth: 0.4, duration: 13.5, delay: 2.5, xDrift: -7 },
+  // Two more on the right edge, vertically centered (middle of the hero),
+  // given distinct sizes.
+  { leftPct: 88, topPct: 46, size: 4, depth: 0.9, duration: 9.5, delay: 0.5, xDrift: -9 },
+  { leftPct: 79, topPct: 58, size: 1, depth: 0.3, duration: 13, delay: 2, xDrift: 8 },
 ]
 
 // A larger scattering of softer glows through the hero, using the exact
@@ -95,10 +106,9 @@ const DUST_MOTES = [
 // down and kept to a tight, varied-but-modest size range (10–24px radius)
 // so they read as many small specks catching the light, not a handful of
 // mini spotlights. Distinct from the finer DUST_MOTES above.
-// Cut from 14 down to 7 for the same reason as DUST_MOTES above — this is
-// an always-on animation cost (opacity/scale looping forever) independent
-// of the cursor, not something the earlier proximity-math optimizations
-// could touch.
+// Originally cut from 14 down to 7 for perf, then partially restored — the
+// lag turned out to be mostly battery/power mode, so a few more were added
+// back in gaps between the original 7.
 const HERO_LIGHT_SPECKS = [
   { leftPct: 24, topPct: 28, radius: 22, duration: 7.5, delay: 0.3, xDrift: 12 },
   { leftPct: 78, topPct: 22, radius: 14, duration: 9, delay: 1.8, xDrift: -10 },
@@ -107,6 +117,9 @@ const HERO_LIGHT_SPECKS = [
   { leftPct: 55, topPct: 85, radius: 18, duration: 8.8, delay: 0.7, xDrift: 11 },
   { leftPct: 10, topPct: 15, radius: 16, duration: 9.6, delay: 1.3, xDrift: 8 },
   { leftPct: 90, topPct: 12, radius: 11, duration: 11, delay: 0.5, xDrift: -9 },
+  { leftPct: 45, topPct: 55, radius: 15, duration: 9.2, delay: 1.9, xDrift: 10 },
+  { leftPct: 5, topPct: 55, radius: 13, duration: 10.8, delay: 0.9, xDrift: -8 },
+  { leftPct: 68, topPct: 8, radius: 17, duration: 8.6, delay: 2.2, xDrift: 9 },
 ]
 
 // Each speck sits at a fixed (leftPct, topPct) spot and reacts only to how
@@ -1186,7 +1199,7 @@ export default function Landing() {
               <div className="w-7 h-7 bg-ucf-gold/15 rounded-lg flex items-center justify-center shrink-0">
                 <BookOpen className="h-3.5 w-3.5 text-ucf-gold" />
               </div>
-              <span className="text-white font-bold text-sm tracking-tight">IgKnight</span>
+              <span className="text-white font-bold text-sm tracking-tight uppercase">IgKnight</span>
             </div>
             <p className="text-gray-600 text-sm">
               © {new Date().getFullYear()} IgKnight. Built for UCF Knights. Not affiliated with UCF.
