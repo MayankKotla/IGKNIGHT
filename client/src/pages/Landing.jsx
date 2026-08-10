@@ -55,19 +55,16 @@ const steps = [
     title: 'Sign up with your UCF email',
     desc: 'Create your account using your @ucf.edu or @knights.ucf.edu address.',
     stepClass: 'how-it-works-step-1',
-    numberBelow: false,
   },
   {
     title: 'Find your courses',
     desc: 'Browse the course catalog and join or create a study group for your class.',
     stepClass: 'how-it-works-step-2',
-    numberBelow: true,
   },
   {
     title: 'Study smarter together',
     desc: 'Chat in realtime, schedule sessions, and quiz yourself with KnightCheck — all in one place.',
     stepClass: 'how-it-works-step-3',
-    numberBelow: false,
   },
 ]
 
@@ -76,6 +73,11 @@ const steps = [
 // percentages within the hero, deliberately kept to the edges/corners so
 // nothing crosses the headline, subtext, or buttons in the center.
 
+// Cut from 16 down to 8 to fix lag that persisted even with the cursor
+// completely still: each mote runs its own `repeat: Infinity` keyframe
+// animation (opacity/x/y) forever, regardless of any user interaction, plus
+// a blur filter — so this was a constant, always-on compositing cost that
+// had nothing to do with the cursor-proximity code we'd been optimizing.
 const DUST_MOTES = [
   { leftPct: 18, topPct: 22, size: 3, depth: 0.9, duration: 9, delay: 0, xDrift: 10 },
   { leftPct: 82, topPct: 18, size: 2, depth: 0.5, duration: 12, delay: 0.6, xDrift: -8 },
@@ -84,22 +86,123 @@ const DUST_MOTES = [
   { leftPct: 28, topPct: 82, size: 2, depth: 0.4, duration: 13, delay: 1.8, xDrift: 9 },
   { leftPct: 72, topPct: 86, size: 3, depth: 0.7, duration: 10, delay: 0.9, xDrift: -10 },
   { leftPct: 50, topPct: 12, size: 2, depth: 0.5, duration: 12.5, delay: 1.5, xDrift: 7 },
-  { leftPct: 35, topPct: 30, size: 2, depth: 0.8, duration: 9.5, delay: 2.1, xDrift: -9 },
   { leftPct: 64, topPct: 36, size: 3, depth: 0.6, duration: 11.5, delay: 0.4, xDrift: 11 },
-  { leftPct: 20, topPct: 45, size: 2, depth: 0.3, duration: 14, delay: 1.1, xDrift: -6 },
-  { leftPct: 80, topPct: 48, size: 3, depth: 0.9, duration: 8.5, delay: 1.7, xDrift: 13 },
-  { leftPct: 45, topPct: 70, size: 2, depth: 0.5, duration: 10.5, delay: 0.7, xDrift: -7 },
-  { leftPct: 58, topPct: 20, size: 2, depth: 0.4, duration: 13.5, delay: 2.4, xDrift: 8 },
-  { leftPct: 8, topPct: 35, size: 2, depth: 0.6, duration: 9, delay: 1.9, xDrift: -11 },
-  { leftPct: 92, topPct: 40, size: 2, depth: 0.5, duration: 12, delay: 0.2, xDrift: 6 },
-  { leftPct: 40, topPct: 88, size: 2, depth: 0.3, duration: 11, delay: 1.4, xDrift: -8 },
 ]
 
-function DustMote({ leftPct, topPct, size, depth, duration, delay, xDrift, mouseX, mouseY }) {
-  // Near motes (higher depth) drift more with the cursor than far ones —
-  // the same near-things-move-more-than-far-things cue real parallax uses.
-  const moteX = useTransform(mouseX, [-0.5, 0.5], [-16 * depth, 16 * depth])
-  const moteY = useTransform(mouseY, [-0.5, 0.5], [-10 * depth, 10 * depth])
+// A larger scattering of softer glows through the hero, using the exact
+// same radial-gradient recipe as the traveling key light further down this
+// file (rgba(255,201,4,0.30) fading to transparent at 70%) — scaled way
+// down and kept to a tight, varied-but-modest size range (10–24px radius)
+// so they read as many small specks catching the light, not a handful of
+// mini spotlights. Distinct from the finer DUST_MOTES above.
+// Cut from 14 down to 7 for the same reason as DUST_MOTES above — this is
+// an always-on animation cost (opacity/scale looping forever) independent
+// of the cursor, not something the earlier proximity-math optimizations
+// could touch.
+const HERO_LIGHT_SPECKS = [
+  { leftPct: 24, topPct: 28, radius: 22, duration: 7.5, delay: 0.3, xDrift: 12 },
+  { leftPct: 78, topPct: 22, radius: 14, duration: 9, delay: 1.8, xDrift: -10 },
+  { leftPct: 15, topPct: 76, radius: 20, duration: 8.2, delay: 1, xDrift: 9 },
+  { leftPct: 85, topPct: 72, radius: 12, duration: 10.5, delay: 2.4, xDrift: -8 },
+  { leftPct: 55, topPct: 85, radius: 18, duration: 8.8, delay: 0.7, xDrift: 11 },
+  { leftPct: 10, topPct: 15, radius: 16, duration: 9.6, delay: 1.3, xDrift: 8 },
+  { leftPct: 90, topPct: 12, radius: 11, duration: 11, delay: 0.5, xDrift: -9 },
+]
+
+// Each speck sits at a fixed (leftPct, topPct) spot and reacts only to how
+// close the cursor gets to THAT spot — not to the cursor's raw position
+// across the whole hero. mouseX/mouseY here are the shared smoothMouseX/Y
+// (one spring pair, defined once in the parent and reused by every ambient
+// element — see the note by proximitySpring there for why it's shared
+// rather than one spring per element). This component's own math is a
+// plain, non-spring useTransform: we convert the speck's own percent
+// position into the same -0.5..0.5 space as the smoothed mouse position and
+// measure the distance between the two. Within PROXIMITY_RADIUS the speck
+// gets nudged away from the cursor, with the nudge strength fading smoothly
+// to zero at the radius's edge — outside it, the speck doesn't move at all.
+// The already-smoothed input is what makes the reaction ease in/out
+// smoothly, without needing another spring on top of it here.
+const SPECK_PROXIMITY_RADIUS = 0.16
+const SPECK_MAX_NUDGE = 14
+
+function HeroLightSpeck({ leftPct, topPct, radius, duration, delay, mouseX, mouseY, heroActive }) {
+  const homeX = leftPct / 100 - 0.5
+  const homeY = topPct / 100 - 0.5
+
+  // mouseX/mouseY here are the shared, already-springed smoothMouseX/Y (one
+  // spring pair reused by every ambient element — see the note by
+  // proximitySpring in the parent component) — no per-element spring on top
+  // of it, since that's what caused the earlier lag.
+  const speckX = useTransform([mouseX, mouseY, heroActive], ([mx, my, active]) => {
+    if (!active) return 0
+    const dx = homeX - mx
+    const dy = homeY - my
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.0001
+    const strength = Math.max(0, 1 - dist / SPECK_PROXIMITY_RADIUS)
+    return (dx / dist) * strength * SPECK_MAX_NUDGE
+  })
+  const speckY = useTransform([mouseX, mouseY, heroActive], ([mx, my, active]) => {
+    if (!active) return 0
+    const dx = homeX - mx
+    const dy = homeY - my
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.0001
+    const strength = Math.max(0, 1 - dist / SPECK_PROXIMITY_RADIUS)
+    return (dy / dist) * strength * SPECK_MAX_NUDGE
+  })
+
+  return (
+    <motion.div
+      className="absolute pointer-events-none"
+      style={{
+        left: `${leftPct}%`,
+        top: `${topPct}%`,
+        width: radius * 2,
+        height: radius * 2,
+        marginLeft: -radius,
+        marginTop: -radius,
+        zIndex: 4,
+        x: speckX,
+        y: speckY,
+        background: `radial-gradient(circle ${radius}px at 50% 50%, rgba(255,201,4,0.30) 0%, transparent 70%)`,
+      }}
+      animate={{
+        opacity: [0.35, 0.9, 0.45, 0.8, 0.35],
+        scale: [1, 1.12, 0.94, 1.08, 1],
+      }}
+      transition={{ duration, repeat: Infinity, ease: 'easeInOut', delay }}
+    />
+  )
+}
+
+function DustMote({ leftPct, topPct, size, depth, duration, delay, xDrift, mouseX, mouseY, heroActive }) {
+  // Same proximity model as HeroLightSpeck below — the mote only reacts
+  // when the cursor is actually near it, not to the cursor's position
+  // anywhere in the hero. Near motes (higher depth) still drift more than
+  // far ones when they do react — the same near-things-move-more-than-far-
+  // things cue real parallax uses — via the depth-scaled nudge magnitude.
+  const homeX = leftPct / 100 - 0.5
+  const homeY = topPct / 100 - 0.5
+
+  // mouseX/mouseY here are the shared, already-springed smoothMouseX/Y — no
+  // per-element spring on top (see the note by proximitySpring in the
+  // parent component for why: one shared spring instead of ~60 individual
+  // ones is what actually fixed the lag).
+  const moteX = useTransform([mouseX, mouseY, heroActive], ([mx, my, active]) => {
+    if (!active) return 0
+    const dx = homeX - mx
+    const dy = homeY - my
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.0001
+    const strength = Math.max(0, 1 - dist / SPECK_PROXIMITY_RADIUS)
+    return (dx / dist) * strength * 16 * depth
+  })
+  const moteY = useTransform([mouseX, mouseY, heroActive], ([mx, my, active]) => {
+    if (!active) return 0
+    const dx = homeX - mx
+    const dy = homeY - my
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.0001
+    const strength = Math.max(0, 1 - dist / SPECK_PROXIMITY_RADIUS)
+    return (dy / dist) * strength * 10 * depth
+  })
   return (
     <motion.div
       className="absolute pointer-events-none"
@@ -369,44 +472,11 @@ function FeatureCarousel({ items }) {
   )
 }
 
-// A single stroked path — shaft and arrowhead drawn as one continuous
-// line — instead of a separate line element butted up against an icon,
-// which never quite reads as one shape (different stroke widths, and the
-// icon's own internal padding throws off the join).
-function ConnectorArrow() {
-  return (
-    <svg width="96" height="16" viewBox="0 0 96 16" fill="none">
-      <path
-        d="M2 8H88M88 8L78 1M88 8L78 15"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function AnimatedStep({ title, desc, index, stepClass, numberBelow = false }) {
-  // Big, bare number — no bubble, white instead of gold, with a soft glow
-  // behind it doing the work a border/fill circle used to.
-  const number = (
-    <motion.span
-      initial={{ opacity: 0, y: 12 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.6 }}
-      transition={{ type: 'spring', stiffness: 220, damping: 18, delay: index * 0.12 + 0.1 }}
-      className={`text-6xl font-extrabold text-white leading-none shrink-0 ${numberBelow ? 'mt-4' : 'mb-4'}`}
-      style={{ textShadow: '0 0 28px rgba(255,255,255,0.25)' }}
-    >
-      {index + 1}
-    </motion.span>
-  )
-
+function AnimatedStep({ title, desc, index, stepClass }) {
   // Positioning (the CSS class below) lives on this plain outer div, not on
   // the motion.div inside it. Framer Motion drives its animated elements via
   // an inline `transform` style, which always wins over an external CSS
-  // `transform` rule — so putting both the zigzag offset AND the fade-up
+  // `transform` rule — so putting both the vertical offset AND the fade-up
   // entrance animation's transform on the *same* element meant Framer's
   // inline style silently overwrote the CSS one every time. Splitting them
   // across two elements means neither one clobbers the other.
@@ -414,17 +484,33 @@ function AnimatedStep({ title, desc, index, stepClass, numberBelow = false }) {
     <div className={`how-it-works-step ${stepClass} flex flex-col items-center text-center mb-10 md:mb-0 md:px-0 px-4`}>
       <motion.div
         variants={fadeUp}
+        // initial={false} instead of relying on the "hidden" state inherited
+        // from the parent's whileInView propagation — this was the actual
+        // bug behind the title/description going missing: the propagated
+        // "hidden" variant (opacity: 0) was the state that stuck, so the
+        // whole card silently never became visible on the live page even
+        // though nothing looked wrong in the code. Starting from the
+        // component's natural (visible) state removes that failure mode
+        // entirely — the fade-up becomes a bonus if whileInView still fires
+        // correctly, not a requirement for the content to show at all.
+        initial={false}
+        whileInView="visible"
+        viewport={{ once: true, amount: 0.2 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         className="flex flex-col items-center text-center w-full"
       >
-        {!numberBelow && number}
+        {/* No more bare solid number here — the giant ghost numeral behind
+            the card (rendered in the parent, see how-it-works-ghost) is now
+            the only "1/2/3" indicator, so there were no longer two rows of
+            numbers stacked on top of each other. Kept as visually-hidden
+            text so the step order still reaches screen readers. */}
+        <span className="sr-only">Step {index + 1}: </span>
         {/* Fixed size so all three cards match regardless of description
             length — text centers within instead of stretching the box. */}
         <div className="card border border-app-border rounded-2xl p-5 w-[230px] h-40 flex flex-col justify-center">
           <h3 className="text-base font-semibold mb-2 text-white">{title}</h3>
           <p className="text-gray-400 text-sm leading-relaxed">{desc}</p>
         </div>
-        {numberBelow && number}
       </motion.div>
     </div>
   )
@@ -437,14 +523,30 @@ function AnimatedStep({ title, desc, index, stepClass, numberBelow = false }) {
 // the parent tilts (mouse-driven rotateX/rotateY), the stack's side steps
 // become visible, reading as genuine extruded depth rather than a flat
 // plane rotating in place.
-const EXTRUDE_LAYERS = 12
+//
+// Dropped from 12 layers to 1 to fix lag: every layer is its own
+// absolutely-positioned element inside a preserve-3d parent whose rotation
+// updates every frame you move the mouse (via the tilt spring), so the
+// browser was recompositing 13 stacked large-text elements continuously.
+// With 1 layer there's no visible "steps" of depth as it tilts anymore —
+// it's back to a flat plane rotating in place — but it still tilts with
+// the cursor, just without the extruded edge effect.
+const EXTRUDE_LAYERS = 1
 const EXTRUDE_STEP = 1.6 // px between each layer along Z
 
-// Traveling key light sizing — LIGHT_PAD must exceed LIGHT_RADIUS so the
-// glow's containing box always has enough margin on every side to render a
-// complete circle, no matter where the path moves it.
-const LIGHT_RADIUS = 300
-const LIGHT_PAD = 340
+// Traveling key light sizing. The light starts out small (the same size as
+// the ambient hero specks, so it first reads as "just another speck") and
+// grows to its full size as you scroll down.
+const LIGHT_RADIUS_START = 20
+const LIGHT_RADIUS_END = 220
+// The blend-mode box (see mixBlendMode note near where this is rendered)
+// only needs to be big enough to contain the largest possible glow. The
+// gradient goes fully transparent at 70% of its own radius, so at the max
+// radius (220px) the lit area tops out around 154px from center — 420px
+// gives a comfortable margin for that, plus the glow's own scale pulse
+// (up to ~1.22x), without coming anywhere near covering the full page the
+// way the old pad-based box did.
+const LIGHT_BOX_SIZE = 420
 
 function ExtrudedHeadline() {
   const layers = Array.from({ length: EXTRUDE_LAYERS })
@@ -536,7 +638,14 @@ export default function Landing() {
   // scroll, while still catching up quickly once you slow down or stop.
   const smoothProgress = useSpring(pageProgress, { stiffness: 80, damping: 22, mass: 0.5 })
   // Overall descent — the light's containing box travels the full page height.
-  const lightScrollY = useTransform(smoothProgress, [0, 1], ['6vh', '90vh'])
+  // Starts at 20vh rather than right at the top: the fixed Navbar (z-50,
+  // opaque/blurred, ~64px tall) sits above the light's own z-index of 15, so
+  // a start position tucked under it would be hidden — this was invisible
+  // at first with the old large radius too, it just didn't matter because
+  // the glow was big enough to bleed out from under the navbar either way.
+  // Now that it starts small (see LIGHT_RADIUS_START), it needs a start
+  // position that's actually clear of the navbar to read as visible at all.
+  const lightScrollY = useTransform(smoothProgress, [0, 1], ['20vh', '90vh'])
 
   // The path itself: smooth, continuous sine curves driven by (smoothed)
   // scroll position, so the wiggle and the "dialing" size pulse are always
@@ -547,6 +656,10 @@ export default function Landing() {
   // In viewport-width units (not px) so the swing genuinely reaches both
   // edges of the screen regardless of device width, instead of a fixed
   // pixel amount that barely registers on a wide monitor.
+  // Grows from speck-size to full size over the first ~40% of the page,
+  // then holds — a gradual reveal rather than a jump the moment you scroll.
+  const lightRadius = useTransform(smoothProgress, [0, 0.4], [LIGHT_RADIUS_START, LIGHT_RADIUS_END])
+
   const pathX = useTransform(smoothProgress, (p) => Math.sin(p * Math.PI * 2 * 1.3) * 42)
   const pathY = useTransform(smoothProgress, (p) => Math.sin(p * Math.PI * 2 * 0.9 + 1) * 40)
   const pathScale = useTransform(smoothProgress, (p) => 1 + Math.sin(p * Math.PI * 2 * 1.8 + 0.6) * 0.22)
@@ -560,15 +673,44 @@ export default function Landing() {
   // snapping straight to the cursor. Resets to center on mouse leave.
   const mouseX = useMotionValue(0)
   const mouseY = useMotionValue(0)
+  // Separate on/off flag for proximity-based effects (e.g. HeroLightSpeck).
+  // mouseX/mouseY reset to 0 (center) on mouse-leave so the headline tilt
+  // and ambient parallax ease back to neutral — but 0,0 is a real, valid
+  // cursor position for proximity math, so without this flag a speck near
+  // the center would wrongly read "the mouse just arrived right on top of
+  // me" the instant the cursor actually left.
+  const heroActive = useMotionValue(0)
+
+  // mousemove can fire far more often than the screen actually repaints
+  // (well over 60Hz on a high-polling-rate mouse/trackpad), and each raw
+  // event used to call mouseX.set()/mouseY.set() directly — fanning out
+  // synchronously to every subscriber (every dust mote, light speck, and
+  // the main light) on every single event. Batching to one update per
+  // animation frame caps that fan-out to the display's actual refresh
+  // rate, which is most of this component's real performance fix.
+  const latestMouseRef = useRef({ x: 0, y: 0 })
+  const mouseRafRef = useRef(null)
 
   const handleHeroMouseMove = (e) => {
     const rect = e.currentTarget.getBoundingClientRect()
-    mouseX.set((e.clientX - rect.left) / rect.width - 0.5)
-    mouseY.set((e.clientY - rect.top) / rect.height - 0.5)
+    latestMouseRef.current.x = (e.clientX - rect.left) / rect.width - 0.5
+    latestMouseRef.current.y = (e.clientY - rect.top) / rect.height - 0.5
+    if (mouseRafRef.current) return
+    mouseRafRef.current = requestAnimationFrame(() => {
+      mouseX.set(latestMouseRef.current.x)
+      mouseY.set(latestMouseRef.current.y)
+      heroActive.set(1)
+      mouseRafRef.current = null
+    })
   }
   const handleHeroMouseLeave = () => {
+    if (mouseRafRef.current) {
+      cancelAnimationFrame(mouseRafRef.current)
+      mouseRafRef.current = null
+    }
     mouseX.set(0)
     mouseY.set(0)
+    heroActive.set(0)
   }
 
   // Softer/heavier than a snap-to-cursor spring — lower stiffness and more
@@ -582,22 +724,74 @@ export default function Landing() {
   const rotateX = useTransform(tiltX, [-0.5, 0.5], [-3, 3])
   const rotateY = useTransform(tiltY, [-0.5, 0.5], [3, -3])
 
+  // One shared smoothing spring, reused by every dust mote, light speck,
+  // and the main light's proximity reaction. A spring isn't a cheap, one-
+  // shot calculation — it's a physics simulation that keeps re-solving
+  // itself every animation frame until it settles. An earlier version of
+  // this gave each of the ~30 ambient elements its own independent spring
+  // (~60 springs total, all ticking every frame the cursor moved), which is
+  // what actually caused the lag. A single shared spring plus cheap,
+  // non-spring proximity math per element keeps the same smooth "glide"
+  // feel at a fraction of the per-frame cost.
+  const proximitySpring = { stiffness: 100, damping: 20, mass: 0.5 }
+  const smoothMouseX = useSpring(mouseX, proximitySpring)
+  const smoothMouseY = useSpring(mouseY, proximitySpring)
+
   // The room itself is entirely static — wall, seam, floor, and the shadow
   // under the text never move. The key light (rendered below, outside the
-  // hero) is the one thing that moves: it wanders with the cursor while
-  // you're in the hero, and travels down the page as you scroll.
-  const lightSpring = { stiffness: 38, damping: 16, mass: 0.9 }
-  const lightMouseX = useSpring(mouseX, lightSpring)
-  const lightMouseY = useSpring(mouseY, lightSpring)
-  const lightTranslateX = useTransform(lightMouseX, [-0.5, 0.5], [-70, 70])
-  const lightTranslateY = useTransform(lightMouseY, [-0.5, 0.5], [-40, 40])
+  // hero) is the one thing that moves: it wanders toward the cursor, but
+  // only when the cursor is actually near it — same proximity model as the
+  // ambient specks below, rather than reacting to the cursor's position
+  // anywhere in the hero — and travels down the page as you scroll.
+  //
+  // "Near it" is measured in the same -0.5..0.5-of-hero-bounds space as
+  // mouseX/mouseY. pathX is already in vw and the hero spans the full
+  // viewport width, so pathX/100 lines up directly as the light's baseline
+  // horizontal position. lightScrollY is a '20vh'..'90vh' string — the
+  // light's absolute vertical position as a fraction of the (full-viewport-
+  // height) hero — so centering it (fraction - 0.5) lines it up the same way.
+  const lightHomeX = useTransform(pathX, (px) => px / 100)
+  const lightHomeY = useTransform(lightScrollY, (vh) => parseFloat(vh) / 100 - 0.5)
+
+  const lightTranslateX = useTransform(
+    [smoothMouseX, smoothMouseY, lightHomeX, lightHomeY, heroActive],
+    ([mx, my, hx, hy, active]) => {
+      if (!active) return 0
+      const dx = mx - hx
+      const dy = my - hy
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.0001
+      const strength = Math.max(0, 1 - dist / SPECK_PROXIMITY_RADIUS)
+      return (dx / dist) * strength * 70
+    }
+  )
+  const lightTranslateY = useTransform(
+    [smoothMouseX, smoothMouseY, lightHomeX, lightHomeY, heroActive],
+    ([mx, my, hx, hy, active]) => {
+      if (!active) return 0
+      const dx = mx - hx
+      const dy = my - hy
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.0001
+      const strength = Math.max(0, 1 - dist / SPECK_PROXIMITY_RADIUS)
+      return (dy / dist) * strength * 40
+    }
+  )
 
   // Cursor wander and the scroll-driven path add together, so the light is
   // one thing responding to two inputs rather than two separate effects.
   // pathX is in vw and lightTranslateX is in px, so they're combined via a
   // CSS calc() string rather than plain addition.
   const lightPosX = useMotionTemplate`calc(${pathX}vw + ${lightTranslateX}px)`
-  const lightPosY = useTransform([pathY, lightTranslateY], ([a, b]) => a + b)
+  // Same idea vertically: lightScrollY is the light's absolute scroll-driven
+  // position (a vh string), pathY is its local wiggle, and lightTranslateY
+  // is the cursor-proximity nudge — all combined into one calc() so the box
+  // below only needs a single y transform instead of stacking two nested
+  // elements the way this used to.
+  const lightPosY = useMotionTemplate`calc(${lightScrollY} + ${pathY}px + ${lightTranslateY}px)`
+  // The gradient is now centered in its own small box (see LIGHT_BOX_SIZE)
+  // rather than offset by a large fixed pad within a page-spanning box, so
+  // it's just centered at 50% 50%. Still reactive via useMotionTemplate
+  // since the radius grows with scroll.
+  const lightBackground = useMotionTemplate`radial-gradient(circle ${lightRadius}px at 50% 50%, rgba(255,201,4,0.30) 0%, transparent 70%)`
 
   // Scroll-snap is opt-in per element via scroll-snap-align, but the
   // snap-type itself has to live on the actual scrolling element — which
@@ -627,30 +821,31 @@ export default function Landing() {
       {/* Traveling key light — the one continuous light source for the whole
           page. It starts near the top of the hero and winds its way down to
           the footer as you scroll in a smooth S-curve, staying visible the
-          entire way. The outer box is padded well beyond the glow's radius
-          on every side so the circle never gets clipped by its own
-          container, however far the path wanders. */}
+          entire way. mixBlendMode is what makes it read as a light additively
+          brightening whatever's beneath it rather than a flat gold circle —
+          but blend-mode compositing is expensive over a large area, so this
+          box is sized just big enough to contain the glow itself (see
+          LIGHT_BOX_SIZE) and moves as one element, instead of the previous
+          two-layer setup where the blended box spanned nearly two full
+          viewport heights at all times regardless of the glow's actual size. */}
       <motion.div
-        className="fixed inset-x-0 pointer-events-none"
+        className="fixed pointer-events-none"
         style={{
-          top: -LIGHT_PAD,
-          height: `calc(100vh + ${LIGHT_PAD * 2}px)`,
-          y: lightScrollY,
+          left: '50%',
+          top: 0,
+          width: LIGHT_BOX_SIZE,
+          height: LIGHT_BOX_SIZE,
+          marginLeft: -LIGHT_BOX_SIZE / 2,
+          marginTop: -LIGHT_BOX_SIZE / 2,
           zIndex: 15,
           mixBlendMode: 'screen',
+          background: lightBackground,
+          x: lightPosX,
+          y: lightPosY,
+          scale: pathScale,
+          opacity: pathOpacity,
         }}
-      >
-        <motion.div
-          className="absolute inset-0"
-          style={{
-            background: `radial-gradient(circle ${LIGHT_RADIUS}px at 50% ${LIGHT_PAD}px, rgba(255,201,4,0.30) 0%, transparent 70%)`,
-            x: lightPosX,
-            y: lightPosY,
-            scale: pathScale,
-            opacity: pathOpacity,
-          }}
-        />
-      </motion.div>
+      />
 
       {/* Hero — fixed to the viewport (the permanent "back wall"). As you scroll,
           it shrinks, dims, and drifts back — like the camera pulling away from
@@ -712,7 +907,13 @@ export default function Landing() {
             far ones, the classic multi-plane parallax depth cue, plus a
             slow idle bob/pulse so the room feels like it has air in it. */}
         {DUST_MOTES.map((m, i) => (
-          <DustMote key={i} {...m} mouseX={lightMouseX} mouseY={lightMouseY} />
+          <DustMote key={i} {...m} mouseX={smoothMouseX} mouseY={smoothMouseY} heroActive={heroActive} />
+        ))}
+
+        {/* A few bigger, softer light specks — same glow recipe as the
+            traveling key light, scaled way down. */}
+        {HERO_LIGHT_SPECKS.map((s, i) => (
+          <HeroLightSpeck key={i} {...s} mouseX={smoothMouseX} mouseY={smoothMouseY} heroActive={heroActive} />
         ))}
 
         <motion.div
@@ -858,10 +1059,15 @@ export default function Landing() {
         <Divider />
 
         {/* How it works — full-screen like the hero and features sections.
-            pb pushes the vertically-centered content up within the section
-            (safer than a negative margin, which pushed the heading out of
-            view entirely last time). */}
-        <section className="h-screen flex flex-col justify-center px-10 pb-28" style={{ scrollSnapAlign: 'start' }}>
+            With justify-center, padding-bottom pushes the centered content
+            block UP (shrinks the box it's centered within, from the
+            bottom) and padding-top pushes it DOWN (shrinks it from the
+            top) — pb is gone entirely now, so pt is what's moving the
+            heading down further. There's very little slack left before the
+            now much-taller steps container (bigger ghost numerals) starts
+            pushing the bottom step cards toward/past the fold, so this
+            can't grow a lot more without also shrinking the steps below. */}
+        <section className="h-screen flex flex-col justify-center px-10 pt-16" style={{ scrollSnapAlign: 'start' }}>
           <div className="max-w-4xl mx-auto w-full">
             <motion.div
               className="text-center mb-16"
@@ -874,7 +1080,7 @@ export default function Landing() {
                 How it works
               </motion.h2>
               <motion.p variants={fadeUp} transition={{ duration: 0.55 }} className="text-gray-400">
-                Up and running in under 2 minutes.
+                Three simple steps to get started.
               </motion.p>
             </motion.div>
           </div>
@@ -891,27 +1097,26 @@ export default function Landing() {
             viewport={{ once: true, amount: 0.2 }}
             variants={staggerContainer}
           >
-            {steps.map(({ title, desc, stepClass, numberBelow }, i) => (
+            {/* Giant ghost numerals — huge, very low-opacity "1"/"2"/"3"
+                behind each step, filling the empty space as background
+                texture. Rendered first so they sit behind the actual
+                number/card content via DOM order. aria-hidden since
+                they're purely decorative and the real numbers (in
+                AnimatedStep) already convey the step order to screen
+                readers. */}
+            <div className="how-it-works-ghost how-it-works-ghost-1 hidden md:block" aria-hidden="true">1</div>
+            <div className="how-it-works-ghost how-it-works-ghost-2 hidden md:block" aria-hidden="true">2</div>
+            <div className="how-it-works-ghost how-it-works-ghost-3 hidden md:block" aria-hidden="true">3</div>
+
+            {steps.map(({ title, desc, stepClass }, i) => (
               <AnimatedStep
                 key={title}
                 title={title}
                 desc={desc}
                 index={i}
                 stepClass={stepClass}
-                numberBelow={numberBelow}
               />
             ))}
-
-            {/* Arrows sit at the midpoints between the 25/50/75 stops — one
-                continuous stroked path (shaft + head together), not a
-                separate line div butted up against an icon, so it reads as
-                a single connector instead of two mismatched pieces. */}
-            <div className="how-it-works-arrow how-it-works-arrow-1 hidden md:block text-ucf-gold/60">
-              <ConnectorArrow />
-            </div>
-            <div className="how-it-works-arrow how-it-works-arrow-2 hidden md:block text-ucf-gold/60">
-              <ConnectorArrow />
-            </div>
           </motion.div>
         </section>
 

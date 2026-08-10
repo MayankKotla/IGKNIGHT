@@ -50,42 +50,77 @@
      an exact, unambiguous number. Only the vertical nudge still uses a
      transform (translateY), which was never reported as wrong. */
   @media (min-width: 768px) {
+    /* Taller to fit a much bigger ghost numeral (see how-it-works-ghost)
+       plus a full-size card below it with a real gap between them, rather
+       than the two competing for space in a shorter box. */
     .how-it-works-steps {
-      height: 26rem;
+      height: 44rem;
     }
     .how-it-works-step {
       position: absolute;
       top: 50%;
       width: 230px;
       margin-left: -115px;
+      /* Explicit stacking (rather than relying on default DOM-order
+         stacking among the how-it-works-ghost/how-it-works-step siblings)
+         so the real title/description text is always guaranteed to sit on
+         top of the ghost numeral behind it. */
+      z-index: 1;
     }
+    /* All three steps share one vertical position — pushed down (though
+       less than before — shifted up 40px along with how-it-works-ghost
+       below, moving the whole numeral+card group up as a unit while
+       keeping the exact same gap between them) so the card sits fully
+       clear of the much bigger ghost numeral above it, instead of the
+       card cutting into the numeral. */
     .how-it-works-step-1 {
       left: 25%;
-      transform: translateY(calc(-50% - 80px));
+      transform: translateY(calc(-50% + 156px));
     }
     .how-it-works-step-2 {
       left: 50%;
-      transform: translateY(calc(-50% + 130px));
+      transform: translateY(calc(-50% + 156px));
     }
     .how-it-works-step-3 {
       left: 75%;
-      transform: translateY(calc(-50% - 80px));
+      transform: translateY(calc(-50% + 156px));
     }
-    .how-it-works-arrow {
+    /* Giant ghost numerals — a huge, very low-opacity "1"/"2"/"3" behind
+       each step, centered at that step's horizontal position. Fills the
+       empty space as background texture rather than new foreground
+       clutter (no icons, no glow — both tried and rejected earlier).
+       Rendered before the steps in DOM order so they sit behind the
+       actual number/card content. Shifted up (see how-it-works-step above
+       for the matching downward shift) so the two don't overlap — sized
+       and positioned to fit within the taller how-it-works-steps container
+       above, with a gap before the card. */
+    .how-it-works-ghost {
       position: absolute;
       top: 50%;
-      margin-left: -48px;
+      width: 504px;
+      margin-left: -252px;
+      transform: translateY(calc(-50% - 172px));
+      text-align: center;
+      /* Bebas Neue is a tall, narrow display face (only ships one weight,
+         so font-weight is left at its default) — the elongated letterforms
+         read as more dramatic at this size than a standard bold sans
+         digit, and take up more of the available height. */
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 28rem;
+      line-height: 1;
+      color: rgba(255, 255, 255, 0.045);
+      pointer-events: none;
+      user-select: none;
+      z-index: 0;
     }
-    /* Angled to follow the zigzag: down-right from step 1 (up) into
-       step 2 (down), up-right from step 2 (down) into step 3 (up). Steeper
-       now that step 2 sits further down. */
-    .how-it-works-arrow-1 {
-      left: 37.5%;
-      transform: translateY(-50%) rotate(36deg);
+    .how-it-works-ghost-1 {
+      left: 25%;
     }
-    .how-it-works-arrow-2 {
-      left: 62.5%;
-      transform: translateY(-50%) rotate(-36deg);
+    .how-it-works-ghost-2 {
+      left: 50%;
+    }
+    .how-it-works-ghost-3 {
+      left: 75%;
     }
   }
 }
