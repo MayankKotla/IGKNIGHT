@@ -1,0 +1,64 @@
+name: CI/CD
+
+# Runs on every push and pull request against main. The `test` job is the
+# safety gate: it always runs and installs/tests/builds both workspaces.
+# The `deploy-server` job only runs after `test` passes AND only on a push
+# to main (never on a PR, and never if tests failed) — so a broken commit
+# can reach GitHub but can never reach production.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Installs both workspaces (client + server) from the root lockfile.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run server tests
+        run: npm run test:server
+
+      - name: Run client tests
+        run: npm run test:client
+
+      # Catches build-breaking errors (bad imports, syntax issues, etc.)
+      # before they can reach Vercel's own build step.
+      - name: Build client
+        run: npm run build:client
+
+  deploy-server:
+    name: Deploy server (Render)
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # Render's own "auto-deploy on push" is intentionally left OFF for
+      # this service — see README's Deployment section. Instead, this step
+      # hits the service's Deploy Hook URL directly, so a deploy can only
+      # ever be triggered by a push to main that has already passed the
+      # `test` job above.
+      - name: Trigger Render deploy hook
+        run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL secret not set yet — skipping deploy trigger."
+            echo "See README's Deployment section to finish Render setup."
+            exit 0
+          fi
+          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+  # The client (Vercel) is not deployed from this workflow. Vercel's own
+  # GitHub integration builds and deploys it directly on push to main, and
+  # creates a preview deployment for every pull request — see README's
+  # Deployment section for one-time setup.
