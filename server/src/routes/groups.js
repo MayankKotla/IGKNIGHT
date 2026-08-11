@@ -133,4 +133,70 @@ router.get('/:id', async (req, res) => {
   res.json(data)
 })
 
+// Cleans up a group's Supabase Storage objects — chat attachments, session
+// uploads, and sample-question attachments — then deletes the group row.
+// Storage lives outside Postgres and would otherwise be orphaned once the
+// DB rows cascade-delete, since every other table referencing groups(id)
+// or sessions(id) already has ON DELETE CASCADE. Exported so both DELETE
+// /:id below and the account-deletion route (which deletes any groups the
+// account owns before deleting the account itself) share one code path
+// instead of two copies of the same cleanup logic.
+async function deleteGroupWithCleanup(groupId) {
+  const { data: sessionRows } = await supabaseAdmin
+    .from('sessions')
+    .select('id')
+    .eq('group_id', groupId)
+  const sessionIds = (sessionRows || []).map((s) => s.id)
+
+  const [{ data: chatFiles }, { data: uploadFiles }, { data: sampleQuestionFiles }] = await Promise.all([
+    supabaseAdmin.from('messages').select('storage_path').eq('group_id', groupId).not('storage_path', 'is', null),
+    supabaseAdmin.from('session_uploads').select('storage_path').eq('group_id', groupId).not('storage_path', 'is', null),
+    sessionIds.length
+      ? supabaseAdmin.from('session_sample_questions').select('storage_path').in('session_id', sessionIds).not('storage_path', 'is', null)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const chatPaths = (chatFiles || []).map((r) => r.storage_path)
+  const sessionUploadPaths = [
+    ...(uploadFiles || []).map((r) => r.storage_path),
+    ...(sampleQuestionFiles || []).map((r) => r.storage_path),
+  ]
+
+  // Storage cleanup happens before the row delete, but isn't allowed to
+  // block it — a failed remove() here (e.g. a path already gone) shouldn't
+  // leave the group stuck and undeletable. Errors are logged, not thrown.
+  await Promise.all([
+    chatPaths.length ? supabaseAdmin.storage.from('chat-uploads').remove(chatPaths) : Promise.resolve(),
+    sessionUploadPaths.length ? supabaseAdmin.storage.from('session-uploads').remove(sessionUploadPaths) : Promise.resolve(),
+  ]).catch((err) => console.error(`Group ${groupId} deletion: storage cleanup failed`, err))
+
+  return supabaseAdmin.from('groups').delete().eq('id', groupId)
+}
+
+// DELETE /:id — owner deletes the group entirely. Done as a server route
+// (rather than a plain RLS-gated client delete, the way "leave group" and
+// "kick member" work) specifically so deleteGroupWithCleanup's storage
+// cleanup always runs.
+router.delete('/:id', requireAuth, async (req, res) => {
+  const { id: groupId } = req.params
+
+  const { data: group, error: groupErr } = await supabaseAdmin
+    .from('groups')
+    .select('id, created_by')
+    .eq('id', groupId)
+    .single()
+
+  if (groupErr || !group) return res.status(404).json({ error: 'Group not found' })
+  if (group.created_by !== req.user.id) {
+    return res.status(403).json({ error: 'Only the group owner can delete this group' })
+  }
+
+  const { error: deleteErr } = await deleteGroupWithCleanup(groupId)
+  if (deleteErr) return res.status(500).json({ error: deleteErr.message })
+
+  res.json({ success: true })
+})
+
 module.exports = router
+module.exports.deleteGroupWithCleanup = deleteGroupWithCleanup
+module.exports.supabaseAdmin = supabaseAdmin

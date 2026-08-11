@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BookOpen, Users, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, CheckCircle, Trophy, Clock, Video, ChevronDown, ChevronLeft, ChevronRight, List, LayoutGrid, Pencil, MapPin, Flame } from 'lucide-react'
+import { BookOpen, Users, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, CheckCircle, Trophy, Clock, Video, ChevronDown, ChevronLeft, ChevronRight, List, LayoutGrid, Pencil, MapPin, Flame, AlertCircle, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import CreateGroupModal from '../components/CreateGroupModal'
@@ -182,11 +182,39 @@ export default function Dashboard() {
 
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [showEditName, setShowEditName] = useState(false)
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false)
+  const [deletingAccount, setDeletingAccount] = useState(false)
+  const [deleteAccountError, setDeleteAccountError] = useState('')
   const accountMenuRef = useRef(null)
 
   const handleSignOut = async () => {
     await signOut()
     navigate('/')
+  }
+
+  // Routed through the server (not a plain RLS delete) because any groups
+  // this user owns need their Supabase Storage objects cleaned up before
+  // the auth user itself is deleted — see the comment on DELETE /api/account
+  // in server/src/routes/account.js.
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true)
+    setDeleteAccountError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/account`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Failed to delete account')
+      }
+      await signOut()
+      navigate('/')
+    } catch (err) {
+      setDeleteAccountError(err.message)
+      setDeletingAccount(false)
+    }
   }
 
   useEffect(() => {
@@ -360,6 +388,13 @@ export default function Dashboard() {
                 <LogOut className="w-3.5 h-3.5" />
                 Sign out
               </button>
+              <button
+                onClick={() => { setShowDeleteAccountConfirm(true); setAccountMenuOpen(false) }}
+                className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete account
+              </button>
             </div>
           )}
         </div>
@@ -372,6 +407,41 @@ export default function Dashboard() {
           onClose={() => setShowEditName(false)}
           onSaved={() => {}}
         />
+      )}
+
+      {/* Delete account confirmation modal */}
+      {showDeleteAccountConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="card-elevated border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            <h2 className="font-bold text-white mb-2">Delete your account?</h2>
+            <p className="text-sm text-gray-400 mb-6">
+              This permanently deletes your account. Any groups you own will be deleted for everyone —
+              chat history, sessions, notes, and uploaded files included. This can't be undone.
+            </p>
+            {deleteAccountError && (
+              <div className="flex items-start gap-2.5 bg-red-950/40 border border-red-800/40 rounded-xl p-3 mb-4">
+                <AlertCircle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+                <p className="text-red-400 text-xs">{deleteAccountError}</p>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowDeleteAccountConfirm(false); setDeleteAccountError('') }}
+                disabled={deletingAccount}
+                className="flex-1 py-2.5 rounded-xl border border-app-border text-gray-400 hover:text-white transition-colors duration-200 text-sm font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deletingAccount}
+                className="flex-1 py-2.5 rounded-xl bg-red-500/90 text-white font-bold hover:bg-red-500 transition-colors duration-200 disabled:opacity-50 text-sm"
+              >
+                {deletingAccount ? 'Deleting…' : 'Delete account'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Main */}
@@ -947,6 +1017,7 @@ function DiscoveryTab() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showAll, setShowAll] = useState(false)
   const [joiningId, setJoiningId] = useState(null)
+  const [joinError, setJoinError] = useState('')
 
   useEffect(() => {
     if (!user) return
@@ -972,12 +1043,25 @@ function DiscoveryTab() {
   const handleJoin = async (group) => {
     if (joiningId) return
     setJoiningId(group.id)
+    setJoinError('')
     const { error } = await supabase
       .from('group_members')
       .insert({ group_id: group.id, user_id: user.id, role: 'member' })
     if (!error) {
       setMyGroupIds((prev) => new Set([...prev, group.id]))
       navigate(`/groups/${group.id}`)
+    } else {
+      // The UI already hides the Join button once a group looks full (see
+      // isFull in GroupDiscoveryCard), but that's a snapshot from whenever
+      // this list last loaded — someone else could take the last spot in
+      // between. The enforce_group_member_cap trigger (migration 017) is
+      // the real backstop for that race, so this is what surfaces its
+      // rejection instead of failing silently.
+      setJoinError(
+        error.message?.includes('full')
+          ? error.message
+          : `Couldn't join "${group.name}". It may have filled up — try refreshing.`
+      )
     }
     setJoiningId(null)
   }
@@ -999,6 +1083,16 @@ function DiscoveryTab() {
     <div>
       <h1 className="text-2xl font-semibold tracking-tight text-white mb-1 uppercase">Discover Groups</h1>
       <p className="text-sm text-gray-500 mb-6">Find and join public study groups for your UCF courses</p>
+
+      {joinError && (
+        <div className="flex items-start gap-2.5 bg-red-950/40 border border-red-800/40 rounded-xl p-3 mb-5">
+          <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+          <p className="text-red-400 text-sm flex-1">{joinError}</p>
+          <button onClick={() => setJoinError('')} className="text-red-400/70 hover:text-red-300 transition-colors duration-150">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative mb-8">
