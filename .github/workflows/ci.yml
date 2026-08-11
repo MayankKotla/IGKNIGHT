@@ -20,7 +20,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 20 doesn't have a native WebSocket (needed by Supabase's
+          # Realtime client, constructed at require-time by several server
+          # modules) and its jsdom/undici versions need util.webidl APIs
+          # that only landed in newer Node — both broke client/server tests
+          # here even though they passed locally. Node 22 has both; also
+          # matches what Render runs by default in production.
+          node-version: 22
           cache: npm
 
       # Installs both workspaces (client + server) from the root lockfile.
