@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { BookOpen, AlertCircle, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
-const UCF_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@(ucf\.edu|knights\.ucf\.edu)$/
+const UCF_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@ucf\.edu$/
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -18,7 +18,7 @@ export default function Login() {
     setError('')
 
     if (!UCF_EMAIL_RE.test(email)) {
-      setError('Please use your UCF email address (@ucf.edu or @knights.ucf.edu).')
+      setError('Please use your UCF email address (@ucf.edu).')
       return
     }
 

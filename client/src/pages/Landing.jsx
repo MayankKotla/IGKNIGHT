@@ -26,7 +26,7 @@ const features = [
   {
     icon: MessageSquare,
     title: 'Realtime Chat',
-    desc: 'Collaborate live with your group through instant messaging powered by Supabase Realtime.',
+    desc: 'Message your group live, share files and photos, and edit or delete anything you send.',
   },
   {
     icon: Calendar,
@@ -40,8 +40,8 @@ const features = [
   },
   {
     icon: BookOpen,
-    title: '500+ Courses',
-    desc: 'Browse study groups across every department and subject offered at UCF.',
+    title: 'Every UCF Course',
+    desc: "Browse groups across every department, or add a course code we don't have yet.",
   },
 ]
 
@@ -53,7 +53,7 @@ const features = [
 const steps = [
   {
     title: 'Sign up with your UCF email',
-    desc: 'Create your account using your @ucf.edu or @knights.ucf.edu address.',
+    desc: 'Create your account using your @ucf.edu address.',
     stepClass: 'how-it-works-step-1',
   },
   {

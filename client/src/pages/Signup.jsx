@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { BookOpen, AlertCircle, CheckCircle, Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
-const UCF_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@(ucf\.edu|knights\.ucf\.edu)$/
+const UCF_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@ucf\.edu$/
 
 export default function Signup() {
   const [fullName, setFullName] = useState('')
@@ -22,7 +22,7 @@ export default function Signup() {
     setError('')
 
     if (!UCF_EMAIL_RE.test(email)) {
-      setError('Only UCF email addresses are allowed (@ucf.edu or @knights.ucf.edu).')
+      setError('Only UCF email addresses are allowed (@ucf.edu).')
       return
     }
     if (password.length < 8) {

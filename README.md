@@ -4,7 +4,7 @@ AI-powered study groups exclusively for UCF students.
 
 ## What it is
 
-IgKnight connects UCF Knights through realtime study groups, session scheduling, and KnightCheck — AI-generated quizzes powered by Claude. Access is restricted to `@ucf.edu` and `@knights.ucf.edu` email addresses.
+IgKnight connects UCF Knights through realtime study groups, session scheduling, and KnightCheck — AI-generated quizzes powered by Claude. Access is restricted to `@ucf.edu` email addresses.
 
 ## Stack
 
@@ -35,4 +35,4 @@ Copy `client/.env.example` → `client/.env` and `server/.env.example` → `serv
 
 ## UCF Email Enforcement
 
-Registration is blocked for any email not matching `@ucf.edu` or `@knights.ucf.edu`, enforced at both the client and via a Supabase database trigger.
+Registration is blocked for any email not matching `@ucf.edu`, enforced at both the client and via a Supabase database trigger.
