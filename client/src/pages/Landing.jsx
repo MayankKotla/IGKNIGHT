@@ -9,7 +9,7 @@ import {
   useMotionTemplate,
   animate,
 } from 'framer-motion'
-import { BookOpen, Users, Target, Calendar, MessageSquare, Shield, ArrowRight, ChevronRight } from 'lucide-react'
+import { BookOpen, Users, Target, Calendar, MessageSquare, Shield, ArrowRight, ChevronRight, ChevronDown } from 'lucide-react'
 import Navbar from '../components/Navbar'
 
 const features = [
@@ -718,6 +718,14 @@ export default function Landing() {
     heroActive.set(0)
   }
 
+  // Advances exactly one viewport-height, which is also the exact span the
+  // hero's spacer div (heroTransitionRef) occupies — so this lands right at
+  // the top of the Features section, and scroll-snap (mandatory, set below)
+  // locks it neatly into place rather than stopping partway.
+  const handleScrollHintClick = () => {
+    window.scrollTo({ top: window.innerHeight, behavior: 'smooth' })
+  }
+
   // Softer/heavier than a snap-to-cursor spring — lower stiffness and more
   // mass make it glide toward the target instead of darting to it, which
   // reads as smoother and more deliberate.
@@ -987,6 +995,38 @@ export default function Landing() {
               </motion.div>
             </motion.div>
           </motion.div>
+        </motion.div>
+
+        {/* Scroll hint — pinned near the bottom of the hero viewport rather
+            than stacked under the buttons, so it reads as "there's more
+            below" independent of how tall the centered content block is.
+            Sibling of that block (not nested inside it) so its position
+            doesn't move if the content above grows/shrinks. Opacity is
+            driven by the same heroOpacity used for the rest of the hero, on
+            a plain wrapping div — kept separate from the button's own
+            initial/animate entrance so the two don't fight over the opacity
+            property. */}
+        <motion.div
+          className="absolute inset-x-0 bottom-10 sm:bottom-14 z-10 flex justify-center pointer-events-none"
+          style={{ opacity: heroOpacity }}
+        >
+          <motion.button
+            type="button"
+            onClick={handleScrollHintClick}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.9, ease: [0.22, 1, 0.36, 1] }}
+            className="pointer-events-auto flex flex-col items-center gap-2 text-gray-500 hover:text-gray-300 transition-colors duration-200 cursor-pointer"
+            aria-label="Scroll down to explore"
+          >
+            <span className="text-[11px] uppercase tracking-widest font-medium">Scroll to explore</span>
+            <motion.span
+              animate={{ y: [0, 6, 0] }}
+              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <ChevronDown className="w-5 h-5" />
+            </motion.span>
+          </motion.button>
         </motion.div>
       </section>
 
