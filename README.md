@@ -15,7 +15,7 @@ IgKnight connects UCF Knights through realtime study groups, session scheduling,
 
 ## Features
 
-- Study group discovery and creation (TAs only)
+- Study group discovery and creation
 - Realtime group chat
 - Session scheduling with Google Meet integration (hybrid/online sessions)
 - KnightCheck — quiz generation from session content
@@ -65,6 +65,10 @@ The client isn't deployed from this workflow — Vercel's own GitHub integration
 2. Add the server env vars from `server/.env.example` (Supabase URL/service role key, Anthropic key, Google API credentials, `CLIENT_URL` pointing at the deployed Vercel URL, `SENTRY_DSN` if used) in Render's Environment settings.
 3. In the service's Settings, turn **Auto-Deploy off**. Deploys are triggered by CI instead, so a deploy can never happen from code that hasn't passed the test suite.
 4. In Settings → Deploy Hook, copy the hook URL, then add it as a GitHub repo secret named `RENDER_DEPLOY_HOOK_URL` (Settings → Secrets and variables → Actions in the GitHub repo). Once that secret is set, every push to `main` that passes CI will trigger a Render deploy automatically.
+
+## Backups & Disaster Recovery
+
+See [`docs/DISASTER_RECOVERY.md`](docs/DISASTER_RECOVERY.md) — what data exists and where, what's backed up automatically today (short version: nothing, on Supabase's Free plan), the manual backup procedure (`scripts/backup-database.sh`), and step-by-step recovery for each failure scenario.
 
 ## UCF Email Enforcement
 
