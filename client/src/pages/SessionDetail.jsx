@@ -642,7 +642,7 @@ export default function SessionDetail() {
 
   const TYPE_BADGE = {
     in_person: { label: 'In-Person', cls: 'bg-ucf-gold/10 text-ucf-gold border-ucf-gold/20' },
-    hybrid:    { label: 'Hybrid',    cls: 'bg-ucf-gold/20 text-ucf-gold border-ucf-gold/30' },
+    hybrid:    { label: 'Hybrid',    cls: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
     online:    { label: 'Online',    cls: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
   }
   const badge = TYPE_BADGE[sType] || TYPE_BADGE.in_person
