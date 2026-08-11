@@ -42,8 +42,8 @@
   }
 
   /* Landing page "How it works" step layout. Each step has a fixed,
-     known width (230px card, no side padding), so it's centered on its
-     left% target with a fixed pixel margin-left (-115px = -half the
+     known width (264px card, no side padding), so it's centered on its
+     left% target with a fixed pixel margin-left (-132px = -half the
      width) instead of `transform: translateX(-50%)` — percentage-based
      transforms twice landed off-center for reasons that didn't hold up
      under review, so this removes that percentage entirely in favor of
@@ -59,8 +59,8 @@
     .how-it-works-step {
       position: absolute;
       top: 50%;
-      width: 230px;
-      margin-left: -115px;
+      width: 264px;
+      margin-left: -132px;
       /* Explicit stacking (rather than relying on default DOM-order
          stacking among the how-it-works-ghost/how-it-works-step siblings)
          so the real title/description text is always guaranteed to sit on

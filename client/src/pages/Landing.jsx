@@ -511,8 +511,8 @@ function AnimatedStep({ title, desc, index, stepClass }) {
         <span className="sr-only">Step {index + 1}: </span>
         {/* Fixed size so all three cards match regardless of description
             length — text centers within instead of stretching the box. */}
-        <div className="card border border-app-border rounded-2xl p-5 w-[230px] h-40 flex flex-col justify-center">
-          <h3 className="text-base font-semibold mb-2 text-white">{title}</h3>
+        <div className="card border border-app-border rounded-2xl p-6 w-[264px] h-48 flex flex-col justify-center">
+          <h3 className="text-base font-semibold mb-2.5 text-white">{title}</h3>
           <p className="text-gray-400 text-sm leading-relaxed">{desc}</p>
         </div>
       </motion.div>
