@@ -7,4 +7,11 @@ export default defineConfig({
   // to 5174+ — that silent switch is what caused the CORS/"nothing happens"
   // bug we hit earlier, since the server only allows the CLIENT_URL origin.
   server: { port: 5173, strictPort: true },
+  // Vitest reads this same config file — jsdom since these are browser
+  // components/modules, not Node code.
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.js',
+  },
 })
