@@ -1241,6 +1241,14 @@ export default function Landing() {
               </div>
               <span className="text-white font-bold text-sm tracking-tight uppercase">IgKnight</span>
             </div>
+            <div className="flex items-center gap-5 order-first sm:order-none">
+              <Link to="/privacy" className="text-gray-500 hover:text-gray-300 text-sm transition-colors duration-150">
+                Privacy
+              </Link>
+              <Link to="/terms" className="text-gray-500 hover:text-gray-300 text-sm transition-colors duration-150">
+                Terms
+              </Link>
+            </div>
             <p className="text-gray-600 text-sm">
               © {new Date().getFullYear()} IgKnight. Built for UCF Knights. Not affiliated with UCF.
             </p>
