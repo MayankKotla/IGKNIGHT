@@ -2,8 +2,8 @@ import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BookOpen, AlertCircle, CheckCircle, Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-
-const UCF_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@ucf\.edu$/
+import { isUcfEmail } from '../lib/validators'
+import { PASSWORD_RULES, getFailedPasswordRules } from '../lib/passwordRules'
 
 export default function Signup() {
   const [fullName, setFullName] = useState('')
@@ -12,21 +12,28 @@ export default function Signup() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [passwordFocused, setPasswordFocused] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
   const { signUp } = useAuth()
 
+  // Checked live as the user types (see the checklist rendered under the
+  // password field) and re-checked on submit — the live version is UX, the
+  // submit-time version is the actual gate, so someone can't bypass it by
+  // never triggering onChange (e.g. pasting then submitting fast).
+  const failedRules = getFailedPasswordRules(password)
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
-    if (!UCF_EMAIL_RE.test(email)) {
+    if (!isUcfEmail(email)) {
       setError('Only UCF email addresses are allowed (@ucf.edu).')
       return
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
+    if (failedRules.length > 0) {
+      setError(`Password must have: ${failedRules.map((r) => r.label.toLowerCase()).join(', ')}.`)
       return
     }
     if (password !== confirmPassword) {
@@ -156,6 +163,8 @@ export default function Signup() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => setPasswordFocused(false)}
                   placeholder="••••••••"
                   required
                   className="w-full bg-app-input border border-app-border rounded-xl px-4 py-2.5 pr-10 text-[#e8e8e8] placeholder-gray-600 focus:outline-none focus:border-ucf-gold/60 focus:ring-1 focus:ring-ucf-gold/25 transition-all duration-200 text-sm"
@@ -169,6 +178,25 @@ export default function Signup() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              {/* Live checklist — visible while the field is focused, and
+                  stays visible once they've started typing even after
+                  blurring (e.g. tabbing to Confirm Password) so an unmet
+                  rule doesn't just silently disappear. Hides once the field
+                  is empty and unfocused, so it doesn't clutter the form for
+                  someone who hasn't gotten there yet. */}
+              {(passwordFocused || password.length > 0) && (
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                  {PASSWORD_RULES.map((rule) => {
+                    const met = rule.test(password)
+                    return (
+                      <div key={rule.label} className="flex items-center gap-1.5">
+                        <CheckCircle className={`w-3 h-3 shrink-0 ${met ? 'text-green-500' : 'text-gray-700'}`} />
+                        <span className={`text-xs ${met ? 'text-gray-400' : 'text-gray-600'}`}>{rule.label}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
@@ -202,6 +230,16 @@ export default function Signup() {
               >
                 {loading ? 'Creating account…' : 'Create Account'}
               </button>
+              <p className="text-center text-gray-600 text-xs mt-3 leading-relaxed">
+                By creating an account, you agree to our{' '}
+                <Link to="/terms" className="text-gray-500 hover:text-ucf-gold transition-colors duration-150 underline underline-offset-2">
+                  Terms of Service
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy" className="text-gray-500 hover:text-ucf-gold transition-colors duration-150 underline underline-offset-2">
+                  Privacy Policy
+                </Link>.
+              </p>
             </div>
           </form>
         </div>
