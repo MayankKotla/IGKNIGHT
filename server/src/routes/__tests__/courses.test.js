@@ -1,3 +1,14 @@
+// courses.js requires middleware/auth.js, which builds a real Supabase
+// client (createClient(...)) at require-time. That client's Realtime piece
+// needs a native WebSocket, which isn't available on Node 20 (only Node 22+)
+// — passed locally here because dev machines/sandboxes commonly run newer
+// Node, but broke in CI where the workflow pins Node 20. This test only
+// exercises the two pure string-handling exports below, so it doesn't need
+// a real client at all — mock it the same way auth.test.js does.
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: () => ({}),
+}))
+
 const { normalizeCourseCode, UCF_CODE_RE } = require('../courses')
 
 describe('normalizeCourseCode', () => {
