@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ScheduleSessionModal from '../components/ScheduleSessionModal'
+import NotificationBell from '../components/NotificationBell'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 
 function formatTime(iso) {
@@ -233,8 +234,15 @@ export default function GroupChat() {
   }
 
   useEffect(() => {
-    if (tab === 'chat') bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, tab])
+    if (tab !== 'chat') return
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Keeps the notification bell's unread state current while the user is
+    // actively looking at this chat — without this, a message that arrives
+    // while they're sitting here would still show as unread the next time
+    // they open the bell elsewhere, since the only other lastRead update is
+    // the one on mount, above.
+    localStorage.setItem(`ks:lastRead:${groupId}`, new Date().toISOString())
+  }, [messages, tab, groupId])
 
   useEffect(() => {
     function handler(e) {
@@ -788,6 +796,10 @@ export default function GroupChat() {
           {group?.courses && <p className="text-xs text-ucf-gold">{group.courses.code}</p>}
         </div>
         {muted && <BellOff className="w-3.5 h-3.5 text-gray-600 shrink-0" />}
+
+        {/* currentGroupId excludes this group's own messages from the
+            bell's unread count — the user is already seeing them live. */}
+        <NotificationBell userId={user.id} currentGroupId={groupId} />
 
         <div className="relative shrink-0" ref={menuRef}>
           <button

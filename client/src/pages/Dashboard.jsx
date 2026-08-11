@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import CreateGroupModal from '../components/CreateGroupModal'
 import ScheduleSessionModal from '../components/ScheduleSessionModal'
 import EditNameModal from '../components/EditNameModal'
+import NotificationBell from '../components/NotificationBell'
 import { normalizeForSearch } from '../lib/courseCode'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 
@@ -307,6 +308,12 @@ export default function Dashboard() {
           zIndex: 0,
         }}
       />
+
+      {/* Overlays every tab in the same spot, independent of the tab content
+          below so it doesn't need to be threaded into each tab component. */}
+      <div className="fixed top-5 right-8 z-20">
+        <NotificationBell userId={user.id} />
+      </div>
 
       {/* Sidebar */}
       <aside
