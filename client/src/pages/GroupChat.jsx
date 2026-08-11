@@ -4,7 +4,7 @@ import {
   ArrowLeft, Send, Users, BookOpen, Calendar, Plus, Video, MapPin,
   MoreHorizontal, Crown, BellOff, Bell, Pin, PinOff, LogOut, Share2, Check, X,
   Target, Zap, BarChart2, AlertCircle, Paperclip, FileText, Download, Image as ImageIcon,
-  Pencil, Trash2, ExternalLink,
+  Pencil, Trash2, ExternalLink, Flag, UserX,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -124,8 +124,13 @@ export default function GroupChat() {
   const [participantsOpen, setParticipantsOpen] = useState(false)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showDeleteGroupConfirm, setShowDeleteGroupConfirm] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const [deletingGroup, setDeletingGroup] = useState(false)
+  const [deleteGroupError, setDeleteGroupError] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
+  const [removeMemberId, setRemoveMemberId] = useState(null)
+  const [removingMember, setRemovingMember] = useState(false)
 
   const [signedUrls, setSignedUrls] = useState({})
   const [pendingAttachment, setPendingAttachment] = useState(null)
@@ -136,6 +141,12 @@ export default function GroupChat() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
   const [lightboxMsg, setLightboxMsg] = useState(null)
+  const [blockedUserIds, setBlockedUserIds] = useState(new Set())
+  const [reportTarget, setReportTarget] = useState(null)
+  const [reportReason, setReportReason] = useState('')
+  const [reportDetails, setReportDetails] = useState('')
+  const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [reportSubmitted, setReportSubmitted] = useState(false)
 
   const [muted, setMuted] = useState(() => !!localStorage.getItem(`ks:muted:${groupId}`))
   const [pinnedMessage, setPinnedMessage] = useState(() => {
@@ -170,10 +181,11 @@ export default function GroupChat() {
       setGroup(memberData.groups)
       localStorage.setItem(`ks:lastRead:${groupId}`, new Date().toISOString())
 
-      const [{ data: allMembers }, { data: msgs }, { data: sess }] = await Promise.all([
+      const [{ data: allMembers }, { data: msgs }, { data: sess }, { data: blocks }] = await Promise.all([
         supabase.from('group_members').select('user_id, role, users(full_name, email)').eq('group_id', groupId),
         supabase.from('messages').select('*').eq('group_id', groupId).order('created_at', { ascending: true }),
         supabase.from('sessions').select('*').eq('group_id', groupId).order('start_time', { ascending: true }),
+        supabase.from('user_blocks').select('blocked_id').eq('blocker_id', user.id),
       ])
 
       if (cancelled) return
@@ -187,6 +199,7 @@ export default function GroupChat() {
         msgs.forEach((m) => { if (m.storage_path) generateSignedUrl(m) })
       }
       if (sess) setSessions(sess)
+      if (blocks) setBlockedUserIds(new Set(blocks.map((b) => b.blocked_id)))
       setLoading(false)
     }
 
@@ -354,11 +367,9 @@ export default function GroupChat() {
   }
 
   const openContextMenu = (e, msg) => {
-    const isOwnMsg = msg.user_id === user.id
-    // Nothing to offer on someone else's message unless you're the owner
-    // (who can still pin it) — let the browser's normal context menu
-    // through instead of hijacking it for no reason.
-    if (!isOwnMsg && !isOwner) return
+    // Always something to offer now: Edit/Delete on your own message, Pin
+    // for the owner on anyone's, and Report/Block on anyone else's — so
+    // this no longer bails out and lets the browser's native menu through.
     e.preventDefault()
     setConfirmDeleteId(null)
     setContextMenu({ msgId: msg.id, x: e.clientX, y: e.clientY })
@@ -454,6 +465,92 @@ export default function GroupChat() {
     navigate('/dashboard')
   }
 
+  // Plain client-side delete, gated entirely by the "Owners can remove
+  // members" RLS policy (migration 016) — no server route needed since,
+  // unlike deleting a whole group, removing one member doesn't touch
+  // Supabase Storage.
+  const handleRemoveMember = async (targetUserId) => {
+    setRemovingMember(true)
+    const { error } = await supabase
+      .from('group_members')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('user_id', targetUserId)
+    setRemovingMember(false)
+    setRemoveMemberId(null)
+    if (!error) {
+      setMembers((prev) => {
+        const next = { ...prev }
+        delete next[targetUserId]
+        return next
+      })
+    }
+  }
+
+  const openReportModal = (msg) => {
+    setReportTarget(msg)
+    setReportReason('')
+    setReportDetails('')
+    setReportSubmitted(false)
+    closeContextMenu()
+  }
+
+  const handleSubmitReport = async () => {
+    if (!reportTarget || !reportReason) return
+    setReportSubmitting(true)
+    const { error } = await supabase.from('reports').insert({
+      reporter_id: user.id,
+      reported_user_id: reportTarget.user_id,
+      group_id: groupId,
+      message_id: reportTarget.id,
+      reason: reportReason,
+      details: reportDetails.trim() || null,
+    })
+    setReportSubmitting(false)
+    if (!error) setReportSubmitted(true)
+  }
+
+  // Purely self-service — hides the user's messages from just the person
+  // who blocked them (see visibleMessages below), no group-wide effect and
+  // nothing for the blocked user to be notified of.
+  const handleBlockUser = async (targetUserId) => {
+    await supabase.from('user_blocks').insert({ blocker_id: user.id, blocked_id: targetUserId })
+    setBlockedUserIds((prev) => new Set(prev).add(targetUserId))
+    closeContextMenu()
+  }
+
+  const handleUnblockUser = async (targetUserId) => {
+    await supabase.from('user_blocks').delete().eq('blocker_id', user.id).eq('blocked_id', targetUserId)
+    setBlockedUserIds((prev) => {
+      const next = new Set(prev)
+      next.delete(targetUserId)
+      return next
+    })
+  }
+
+  // Routed through the server (not a plain RLS delete) because deleting a
+  // group also needs to clean up its Supabase Storage objects — see the
+  // comment on DELETE /api/groups/:id in server/src/routes/groups.js.
+  const handleDeleteGroup = async () => {
+    setDeletingGroup(true)
+    setDeleteGroupError('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/groups/${groupId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Failed to delete group')
+      }
+      navigate('/dashboard')
+    } catch (err) {
+      setDeleteGroupError(err.message)
+      setDeletingGroup(false)
+    }
+  }
+
   const handlePin = (msg) => {
     const pinData = { id: msg.id, content: msg.content, user_id: msg.user_id, created_at: msg.created_at }
     localStorage.setItem(`ks:pinned:${groupId}`, JSON.stringify(pinData))
@@ -501,6 +598,10 @@ export default function GroupChat() {
 
   const memberCount = Object.keys(members).length
   const isOwner = members[user.id]?.role === 'owner'
+  // Filtered before the grouping/date-separator logic below runs (not
+  // after), so a blocked user's message doesn't count as a neighbor for
+  // avatar-grouping or "same day" purposes on the messages you do see.
+  const visibleMessages = messages.filter((m) => !blockedUserIds.has(m.user_id))
   const contextMenuMsg = contextMenu ? messages.find((m) => m.id === contextMenu.msgId) : null
   const now = new Date()
   // A session counts as "past" once it has ENDED, not merely once it has
@@ -539,6 +640,107 @@ export default function GroupChat() {
                 {leaving ? 'Leaving…' : 'Leave group'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete group confirmation modal */}
+      {showDeleteGroupConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="card-elevated border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            <h2 className="font-bold text-white mb-2">Delete this group?</h2>
+            <p className="text-sm text-gray-400 mb-6">
+              This permanently deletes the group for everyone — chat history, sessions, notes, and uploaded files. This can't be undone.
+            </p>
+            {deleteGroupError && (
+              <div className="flex items-start gap-2.5 bg-red-950/40 border border-red-800/40 rounded-xl p-3 mb-4">
+                <AlertCircle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+                <p className="text-red-400 text-xs">{deleteGroupError}</p>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowDeleteGroupConfirm(false); setDeleteGroupError('') }}
+                disabled={deletingGroup}
+                className="flex-1 py-2.5 rounded-xl border border-app-border text-gray-400 hover:text-white transition-colors duration-200 text-sm font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteGroup}
+                disabled={deletingGroup}
+                className="flex-1 py-2.5 rounded-xl bg-red-500/90 text-white font-bold hover:bg-red-500 transition-colors duration-200 disabled:opacity-50 text-sm"
+              >
+                {deletingGroup ? 'Deleting…' : 'Delete group'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report message modal */}
+      {reportTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="card-elevated border rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            {reportSubmitted ? (
+              <div className="text-center py-2">
+                <div className="w-12 h-12 bg-ucf-gold/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-6 h-6 text-ucf-gold" />
+                </div>
+                <h2 className="font-bold text-white mb-1.5">Report submitted</h2>
+                <p className="text-sm text-gray-400 mb-5">Thanks for flagging this — it's been recorded for review.</p>
+                <button
+                  onClick={() => setReportTarget(null)}
+                  className="w-full py-2.5 rounded-xl bg-ucf-gold text-black font-bold hover:bg-yellow-400 transition-colors duration-200 text-sm"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <>
+                <h2 className="font-bold text-white mb-1.5">Report message</h2>
+                <p className="text-sm text-gray-400 mb-4">
+                  From {getSenderName(reportTarget.user_id)}. This is sent for review — the sender isn't notified.
+                </p>
+                <div className="space-y-1.5 mb-4">
+                  {['Spam', 'Harassment', 'Inappropriate content', 'Other'].map((reason) => (
+                    <button
+                      key={reason}
+                      onClick={() => setReportReason(reason)}
+                      className={`w-full text-left px-3.5 py-2.5 rounded-xl text-sm border transition-colors duration-150 ${
+                        reportReason === reason
+                          ? 'bg-ucf-gold/10 border-ucf-gold/40 text-ucf-gold'
+                          : 'bg-app-input border-app-border text-gray-300 hover:border-app-border/80'
+                      }`}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={reportDetails}
+                  onChange={(e) => setReportDetails(e.target.value)}
+                  placeholder="Add details (optional)"
+                  rows={3}
+                  className="w-full bg-app-input border border-app-border rounded-xl px-3.5 py-2.5 text-sm text-[#e8e8e8] placeholder-gray-600 focus:outline-none focus:border-ucf-gold/60 focus:ring-1 focus:ring-ucf-gold/25 transition-all duration-200 resize-none mb-5"
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setReportTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl border border-app-border text-gray-400 hover:text-white transition-colors duration-200 text-sm font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSubmitReport}
+                    disabled={!reportReason || reportSubmitting}
+                    className="flex-1 py-2.5 rounded-xl bg-red-500/90 text-white font-bold hover:bg-red-500 transition-colors duration-200 disabled:opacity-50 text-sm"
+                  >
+                    {reportSubmitting ? 'Submitting…' : 'Submit report'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -626,6 +828,15 @@ export default function GroupChat() {
                 <LogOut className="w-3.5 h-3.5" />
                 Leave group
               </button>
+              {isOwner && (
+                <button
+                  onClick={() => { setShowDeleteGroupConfirm(true); setMenuOpen(false) }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete group
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -643,6 +854,7 @@ export default function GroupChat() {
                   const name = member.full_name || member.email?.split('@')[0] || 'Unknown'
                   const isOwnerRow = member.role === 'owner'
                   const isYou = userId === user.id
+                  const confirmingThis = removeMemberId === userId
                   return (
                     <div key={userId} className="px-4 py-2 flex items-center gap-2.5">
                       <div className="w-7 h-7 rounded-full bg-ucf-gold/15 flex items-center justify-center shrink-0">
@@ -656,6 +868,58 @@ export default function GroupChat() {
                         <p className="text-[11px] text-gray-600 truncate">{member.email}</p>
                       </div>
                       {isOwnerRow && <Crown className="w-3 h-3 text-ucf-gold shrink-0" />}
+                      {/* Owner can remove anyone else — not themselves, and
+                          not another owner row (schema only ever creates one
+                          owner today, but this stays correct if that changes). */}
+                      {isOwner && !isOwnerRow && !isYou && (
+                        confirmingThis ? (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleRemoveMember(userId)}
+                              disabled={removingMember}
+                              className="text-[10px] font-semibold text-red-400 hover:text-red-300 px-1.5 py-1 rounded-md hover:bg-red-500/10 transition-colors duration-150 disabled:opacity-50"
+                            >
+                              {removingMember ? '…' : 'Confirm'}
+                            </button>
+                            <button
+                              onClick={() => setRemoveMemberId(null)}
+                              className="text-[10px] text-gray-500 hover:text-gray-300 px-1.5 py-1 rounded-md hover:bg-app-input transition-colors duration-150"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setRemoveMemberId(userId)}
+                            className="shrink-0 p-1 rounded-md text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-150"
+                            title={`Remove ${name}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )
+                      )}
+                      {/* Block/unblock lives here (not just in the message
+                          context menu) because once someone's blocked their
+                          messages are hidden from you entirely — there'd be
+                          no bubble left to right-click to undo it. */}
+                      {!isYou && (
+                        blockedUserIds.has(userId) ? (
+                          <button
+                            onClick={() => handleUnblockUser(userId)}
+                            className="shrink-0 text-[10px] text-gray-500 hover:text-gray-300 px-1.5 py-1 rounded-md hover:bg-app-input transition-colors duration-150"
+                          >
+                            Unblock
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleBlockUser(userId)}
+                            className="shrink-0 p-1 rounded-md text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-150"
+                            title={`Block ${name}`}
+                          >
+                            <UserX className="w-3.5 h-3.5" />
+                          </button>
+                        )
+                      )}
                     </div>
                   )
                 })}
@@ -726,21 +990,25 @@ export default function GroupChat() {
           )}
 
           <div className="flex-1 overflow-y-auto px-4 py-6 relative z-10">
-            {messages.length === 0 && (
+            {visibleMessages.length === 0 && (
               <div className="text-center pt-16">
                 <div className="w-12 h-12 rounded-2xl bg-ucf-gold/10 flex items-center justify-center mx-auto mb-3">
                   <Send className="w-5 h-5 text-ucf-gold/70" />
                 </div>
-                <p className="text-gray-400 text-sm font-medium">No messages yet</p>
-                <p className="text-gray-600 text-xs mt-1">Say hello to the group!</p>
+                <p className="text-gray-400 text-sm font-medium">
+                  {messages.length === 0 ? 'No messages yet' : 'No messages to show'}
+                </p>
+                <p className="text-gray-600 text-xs mt-1">
+                  {messages.length === 0 ? 'Say hello to the group!' : "Everyone here is on your blocked list."}
+                </p>
               </div>
             )}
-            {messages.map((msg, idx) => {
+            {visibleMessages.map((msg, idx) => {
               const isOwn = msg.user_id === user.id
               const senderName = getSenderName(msg.user_id)
               const isPinned = pinnedMessage?.id === msg.id
-              const prev = messages[idx - 1]
-              const next = messages[idx + 1]
+              const prev = visibleMessages[idx - 1]
+              const next = visibleMessages[idx + 1]
               const GROUP_GAP_MS = 5 * 60 * 1000
               const showDateSeparator = !prev || !isSameDay(prev.created_at, msg.created_at)
               const isFirstInGroup =
@@ -985,8 +1253,31 @@ export default function GroupChat() {
                         <Trash2 className="w-3.5 h-3.5" /> Delete
                       </button>
                     )}
-                    {!menuIsOwn && !isOwner && (
-                      <p className="px-3.5 py-2 text-xs text-gray-600">No actions available</p>
+                    {!menuIsOwn && (
+                      <>
+                        {isOwner && <div className="my-1 mx-3 h-px bg-app-border" />}
+                        <button
+                          onClick={() => openReportModal(contextMenuMsg)}
+                          className="w-full text-left px-3.5 py-2 text-sm text-gray-300 hover:text-white hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+                        >
+                          <Flag className="w-3.5 h-3.5" /> Report
+                        </button>
+                        {blockedUserIds.has(contextMenuMsg.user_id) ? (
+                          <button
+                            onClick={() => { handleUnblockUser(contextMenuMsg.user_id); closeContextMenu() }}
+                            className="w-full text-left px-3.5 py-2 text-sm text-gray-300 hover:text-white hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+                          >
+                            <UserX className="w-3.5 h-3.5" /> Unblock user
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleBlockUser(contextMenuMsg.user_id)}
+                            className="w-full text-left px-3.5 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+                          >
+                            <UserX className="w-3.5 h-3.5" /> Block user
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
