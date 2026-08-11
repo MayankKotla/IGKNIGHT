@@ -9,7 +9,6 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ScheduleSessionModal from '../components/ScheduleSessionModal'
-import NotificationBell from '../components/NotificationBell'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 
 function formatTime(iso) {
@@ -796,10 +795,6 @@ export default function GroupChat() {
           {group?.courses && <p className="text-xs text-ucf-gold">{group.courses.code}</p>}
         </div>
         {muted && <BellOff className="w-3.5 h-3.5 text-gray-600 shrink-0" />}
-
-        {/* currentGroupId excludes this group's own messages from the
-            bell's unread count — the user is already seeing them live. */}
-        <NotificationBell userId={user.id} currentGroupId={groupId} />
 
         <div className="relative shrink-0" ref={menuRef}>
           <button

@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BookOpen, Users, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, CheckCircle, Trophy, Clock, Video, ChevronDown, ChevronLeft, ChevronRight, List, LayoutGrid, Pencil, MapPin, Flame, AlertCircle, Trash2 } from 'lucide-react'
+import { BookOpen, Users, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, CheckCircle, Trophy, Clock, Video, ChevronDown, ChevronLeft, ChevronRight, List, LayoutGrid, Pencil, MapPin, Flame, AlertCircle, Trash2, Bell } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import CreateGroupModal from '../components/CreateGroupModal'
 import ScheduleSessionModal from '../components/ScheduleSessionModal'
 import EditNameModal from '../components/EditNameModal'
-import NotificationBell from '../components/NotificationBell'
 import { normalizeForSearch } from '../lib/courseCode'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 
@@ -50,7 +49,7 @@ const dashStagger = {
 function computeGroupCardMeta(g, groupMeta, userId) {
   const memberCount = groupMeta.memberCounts?.[g.id] ?? '—'
   const lastMsg = groupMeta.lastMessages?.[g.id]
-  const nextSession = groupMeta.nextSessions?.[g.id]
+  const unreadCount = groupMeta.unreadCounts?.[g.id] ?? 0
   const isOwnMsg = lastMsg?.user_id === userId
   const senderLabel = isOwnMsg ? 'You' : (lastMsg?.users?.full_name?.split(' ')[0] ?? null)
   // Attachment-only messages have no content (content is nullable since the
@@ -65,11 +64,23 @@ function computeGroupCardMeta(g, groupMeta, userId) {
   const preview = lastMsg
     ? `${senderLabel ? senderLabel + ': ' : ''}${bodyPreview ?? ''}`
     : null
-  return { memberCount, lastMsg, nextSession, preview }
+  return { memberCount, lastMsg, preview, unreadCount }
+}
+
+// Bell + count, stacked — only rendered by callers when count > 0, so
+// there's nothing to show once a group has been opened and its messages
+// read (see the ks:lastRead: effects in GroupChat.jsx).
+function UnreadIndicator({ count, iconClassName = 'w-4 h-4' }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 shrink-0">
+      <Bell className={`${iconClassName} text-white`} />
+      <span className="text-[11px] font-medium text-white leading-none">{count > 9 ? '9+' : count}</span>
+    </div>
+  )
 }
 
 function GroupRow({ g, userId, groupMeta }) {
-  const { memberCount, lastMsg, nextSession, preview } = computeGroupCardMeta(g, groupMeta, userId)
+  const { memberCount, lastMsg, preview, unreadCount } = computeGroupCardMeta(g, groupMeta, userId)
   return (
     <motion.div variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }} whileHover={{ x: 3 }}>
       <Link
@@ -81,10 +92,7 @@ function GroupRow({ g, userId, groupMeta }) {
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="font-medium text-white text-sm tracking-tight truncate">{g.name}</p>
-            <span className="text-xs text-gray-600 shrink-0">{memberCount} / {g.max_members}</span>
-          </div>
+          <p className="font-medium text-white text-sm tracking-tight truncate">{g.name}</p>
 
           {g.courses && (
             <p className="text-xs text-ucf-gold/80 mt-0.5 truncate">
@@ -96,23 +104,22 @@ function GroupRow({ g, userId, groupMeta }) {
             </p>
           )}
 
-          <div className="flex items-center justify-between gap-3 mt-1.5">
-            <p className="text-xs text-gray-600 truncate">
-              {preview ? (
-                <>
-                  {preview} <span className="text-gray-700">· {timeAgo(lastMsg.created_at)}</span>
-                </>
-              ) : (
-                <span className="text-gray-700 italic">No messages yet</span>
-              )}
-            </p>
-            {nextSession && (
-              <span className="text-xs text-gray-600 shrink-0 flex items-center gap-1">
-                <Calendar className="w-3 h-3" />
-                {formatSessionDate(nextSession.start_time)}
-              </span>
+          <p className="text-xs text-gray-600 truncate mt-1.5">
+            {preview ? (
+              <>
+                {preview} <span className="text-gray-700">· {timeAgo(lastMsg.created_at)}</span>
+              </>
+            ) : (
+              <span className="text-gray-700 italic">No messages yet</span>
             )}
-          </div>
+          </p>
+        </div>
+
+        {/* Right-hand column — member count on top, unread bell+count
+            stacked directly beneath it when there's anything unread. */}
+        <div className="flex flex-col items-center gap-2 shrink-0">
+          <span className="text-xs text-gray-600 whitespace-nowrap">{memberCount} / {g.max_members}</span>
+          {unreadCount > 0 && <UnreadIndicator count={unreadCount} iconClassName="w-3.5 h-3.5" />}
         </div>
       </Link>
     </motion.div>
@@ -120,7 +127,7 @@ function GroupRow({ g, userId, groupMeta }) {
 }
 
 function GroupCard({ g, userId, groupMeta }) {
-  const { memberCount, lastMsg, nextSession, preview } = computeGroupCardMeta(g, groupMeta, userId)
+  const { memberCount, lastMsg, preview, unreadCount } = computeGroupCardMeta(g, groupMeta, userId)
   return (
     <motion.div
       variants={dashFadeUp}
@@ -142,12 +149,15 @@ function GroupCard({ g, userId, groupMeta }) {
         <p className="font-medium text-white text-sm tracking-tight truncate mb-1">{g.name}</p>
 
         {g.courses && (
-          <p className="text-xs text-ucf-gold/80 truncate mb-1">
-            {g.courses.code}
-            {g.courses.name && g.courses.name !== g.courses.code && (
-              <span className="text-gray-600"> · {g.courses.name}</span>
-            )}
-          </p>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <p className="text-xs text-ucf-gold/80 truncate">
+              {g.courses.code}
+              {g.courses.name && g.courses.name !== g.courses.code && (
+                <span className="text-gray-600"> · {g.courses.name}</span>
+              )}
+            </p>
+            {unreadCount > 0 && <UnreadIndicator count={unreadCount} />}
+          </div>
         )}
         {formatProfessor(g) && <p className="text-xs text-gray-500 truncate mb-3">{formatProfessor(g)}</p>}
 
@@ -161,12 +171,6 @@ function GroupCard({ g, userId, groupMeta }) {
               <span className="text-gray-700 italic">No messages yet</span>
             )}
           </p>
-          {nextSession && (
-            <span className="text-xs text-gray-600 mt-1.5 flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              {formatSessionDate(nextSession.start_time)}
-            </span>
-          )}
         </div>
       </Link>
     </motion.div>
@@ -308,12 +312,6 @@ export default function Dashboard() {
           zIndex: 0,
         }}
       />
-
-      {/* Overlays every tab in the same spot, independent of the tab content
-          below so it doesn't need to be threaded into each tab component. */}
-      <div className="fixed top-5 right-8 z-20">
-        <NotificationBell userId={user.id} />
-      </div>
 
       {/* Sidebar */}
       <aside
@@ -576,23 +574,31 @@ function HomeTab({ firstName, onGoToDiscover }) {
         { data: statMessages },
         { data: allMembers },
         { data: recentMessages },
-        { data: upcomingSessions },
       ] = await Promise.all([
         supabase.from('sessions').select('id').in('group_id', groupIds).gte('start_time', weekStart.toISOString()),
         supabase.from('messages').select('id, group_id, user_id, created_at').in('group_id', groupIds).neq('user_id', user.id),
         supabase.from('group_members').select('group_id').in('group_id', groupIds),
         supabase.from('messages').select('group_id, content, user_id, created_at, file_name, file_type, storage_path, users(full_name)').in('group_id', groupIds).order('created_at', { ascending: false }).limit(50),
-        supabase.from('sessions').select('group_id, title, start_time').in('group_id', groupIds).gte('start_time', new Date().toISOString()).order('start_time', { ascending: true }),
       ])
 
-      const newMessages = (statMessages || []).filter((msg) => {
+      // Per-group unread count — same lastRead/muted cutoff logic as the
+      // "New Messages" stat below, just tallied per group instead of
+      // summed, so each group card can show its own badge. A group drops
+      // out of this map (and its badge disappears) the moment its lastRead
+      // is bumped, which happens whenever the user opens that group's chat
+      // — see the mount + "while actively viewing" effects in GroupChat.jsx.
+      const unreadCounts = {}
+      const unreadMessages = (statMessages || []).filter((msg) => {
         if (localStorage.getItem(`ks:muted:${msg.group_id}`)) return false
         const lastRead = localStorage.getItem(`ks:lastRead:${msg.group_id}`)
         const cutoff = lastRead || memberships.find((m) => m.group_id === msg.group_id)?.joined_at || new Date(0).toISOString()
         return msg.created_at > cutoff
-      }).length
+      })
+      for (const msg of unreadMessages) {
+        unreadCounts[msg.group_id] = (unreadCounts[msg.group_id] || 0) + 1
+      }
 
-      setStats({ groups: memberships.length, sessionsThisWeek: weekSessions?.length ?? 0, newMessages })
+      setStats({ groups: memberships.length, sessionsThisWeek: weekSessions?.length ?? 0, newMessages: unreadMessages.length })
 
       // member counts
       const memberCounts = {}
@@ -606,13 +612,7 @@ function HomeTab({ firstName, onGoToDiscover }) {
         if (!lastMessages[msg.group_id]) lastMessages[msg.group_id] = msg
       }
 
-      // next session per group
-      const nextSessions = {}
-      for (const s of upcomingSessions || []) {
-        if (!nextSessions[s.group_id]) nextSessions[s.group_id] = s
-      }
-
-      setGroupMeta({ memberCounts, lastMessages, nextSessions })
+      setGroupMeta({ memberCounts, lastMessages, unreadCounts })
       setLoading(false)
     }
     fetchAll()
@@ -1217,17 +1217,6 @@ function timeAgo(iso) {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
-}
-
-function formatSessionDate(iso) {
-  const d = new Date(iso)
-  const now = new Date()
-  const isToday =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  if (isToday) return 'Today'
-  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 function formatSessionTime(iso) {
