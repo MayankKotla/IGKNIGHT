@@ -4,6 +4,7 @@ import {
   ArrowLeft, Send, Users, BookOpen, Calendar, Plus, Video, MapPin,
   MoreHorizontal, Crown, BellOff, Bell, Pin, PinOff, LogOut, Share2, Check, X,
   Target, Zap, BarChart2, AlertCircle, Paperclip, FileText, Download, Image as ImageIcon,
+  Pencil, Trash2, ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -56,6 +57,13 @@ function formatFileSize(bytes) {
 function isImageType(mimeType) {
   if (!mimeType) return false
   return ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/heic', 'image/heif', 'image/webp'].includes(mimeType.toLowerCase())
+}
+
+// Types the browser can render on its own (native PDF viewer, plain text)
+// without forcing a download — everything else (Word, PowerPoint) only
+// gets a Download action since browsers can't open those inline.
+function canOpenInBrowser(mimeType) {
+  return mimeType === 'application/pdf' || mimeType === 'text/plain'
 }
 
 const ALLOWED_ATTACHMENT_TYPES = [
@@ -120,8 +128,14 @@ export default function GroupChat() {
   const [linkCopied, setLinkCopied] = useState(false)
 
   const [signedUrls, setSignedUrls] = useState({})
-  const [uploadingFile, setUploadingFile] = useState(null)
+  const [pendingAttachment, setPendingAttachment] = useState(null)
   const [attachError, setAttachError] = useState('')
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [editText, setEditText] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+  const [contextMenu, setContextMenu] = useState(null)
+  const [lightboxMsg, setLightboxMsg] = useState(null)
 
   const [muted, setMuted] = useState(() => !!localStorage.getItem(`ks:muted:${groupId}`))
   const [pinnedMessage, setPinnedMessage] = useState(() => {
@@ -134,6 +148,7 @@ export default function GroupChat() {
   const menuRef = useRef(null)
   const participantsRef = useRef(null)
   const fileInputRef = useRef(null)
+  const contextMenuRef = useRef(null)
 
   useEffect(() => {
     if (!user) return
@@ -187,6 +202,13 @@ export default function GroupChat() {
         setMessages((prev) => prev.find((m) => m.id === payload.new.id) ? prev : [...prev, payload.new])
         if (payload.new.storage_path) generateSignedUrl(payload.new)
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `group_id=eq.${groupId}` }, (payload) => {
+        setMessages((prev) => prev.map((m) => m.id === payload.new.id ? payload.new : m))
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages', filter: `group_id=eq.${groupId}` }, (payload) => {
+        setMessages((prev) => prev.filter((m) => m.id !== payload.old.id))
+        setPinnedMessage((prev) => prev?.id === payload.old.id ? null : prev)
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [groupId, isMember])
@@ -205,22 +227,65 @@ export default function GroupChat() {
     function handler(e) {
       if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false)
       if (participantsRef.current && !participantsRef.current.contains(e.target)) setParticipantsOpen(false)
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target)) {
+        setContextMenu(null)
+        setConfirmDeleteId(null)
+      }
+    }
+    function escHandler(e) {
+      if (e.key === 'Escape') { setContextMenu(null); setConfirmDeleteId(null); setLightboxMsg(null) }
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', escHandler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', escHandler)
+    }
   }, [])
 
   const handleSend = async (e) => {
     e.preventDefault()
     const content = input.trim()
-    if (!content || sending) return
-    setInput('')
+    if ((!content && !pendingAttachment) || sending) return
     setSending(true)
+
+    let attachmentFields = {}
+    if (pendingAttachment) {
+      const file = pendingAttachment.file
+      const timestamp = Date.now()
+      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
+      const storagePath = `${groupId}/${timestamp}_${safeName}`
+      const { error: storageError } = await supabase.storage
+        .from('chat-uploads')
+        .upload(storagePath, file, { upsert: false })
+      if (storageError) {
+        setSending(false)
+        flashAttachError('Upload failed. Try again.')
+        return
+      }
+      attachmentFields = { file_name: file.name, file_size: file.size, file_type: file.type, storage_path: storagePath }
+    }
+
+    setInput('')
+    if (pendingAttachment?.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl)
+    setPendingAttachment(null)
+
     const tempId = `temp-${Date.now()}`
-    setMessages((prev) => [...prev, { id: tempId, group_id: groupId, user_id: user.id, content, type: 'text', created_at: new Date().toISOString() }])
-    const { data, error } = await supabase.from('messages').insert({ group_id: groupId, user_id: user.id, content, type: 'text' }).select().single()
-    if (!error && data) setMessages((prev) => prev.map((m) => m.id === tempId ? data : m))
-    else setMessages((prev) => prev.filter((m) => m.id !== tempId))
+    setMessages((prev) => [...prev, {
+      id: tempId, group_id: groupId, user_id: user.id, content: content || null, type: 'text',
+      created_at: new Date().toISOString(), ...attachmentFields,
+    }])
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({ group_id: groupId, user_id: user.id, content: content || null, type: 'text', ...attachmentFields })
+      .select()
+      .single()
+    if (!error && data) {
+      setMessages((prev) => prev.map((m) => m.id === tempId ? data : m))
+      if (data.storage_path) generateSignedUrl(data)
+    } else {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId))
+    }
     setSending(false)
     inputRef.current?.focus()
   }
@@ -229,64 +294,112 @@ export default function GroupChat() {
     fileInputRef.current?.click()
   }
 
-  const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
+  const flashAttachError = (msg) => {
+    setAttachError(msg)
+    setTimeout(() => setAttachError(''), 4000)
+  }
+
+  // Staging only — the file isn't uploaded until the user hits Send, so it
+  // shows as a removable preview chip in the input bar first (matches the
+  // "type a caption, review, then send" flow of a normal chat app instead
+  // of firing off the moment a file is picked or dropped).
+  const stageFile = (file) => {
     if (!file) return
     setAttachError('')
 
     if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
-      setAttachError('That file type isn\'t supported.')
-      setTimeout(() => setAttachError(''), 4000)
+      flashAttachError('That file type isn\'t supported.')
       return
     }
     if (file.size > MAX_ATTACHMENT_SIZE) {
-      setAttachError('File is too large (25MB max).')
-      setTimeout(() => setAttachError(''), 4000)
+      flashAttachError('File is too large (25MB max).')
       return
     }
 
-    setUploadingFile({ name: file.name })
-    const timestamp = Date.now()
-    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-    const storagePath = `${groupId}/${timestamp}_${safeName}`
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl)
+      return { file, previewUrl: isImageType(file.type) ? URL.createObjectURL(file) : null }
+    })
+    inputRef.current?.focus()
+  }
 
-    const { error: storageError } = await supabase.storage
-      .from('chat-uploads')
-      .upload(storagePath, file, { upsert: false })
+  const removePendingAttachment = () => {
+    if (pendingAttachment?.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl)
+    setPendingAttachment(null)
+  }
 
-    if (storageError) {
-      setUploadingFile(null)
-      setAttachError('Upload failed. Try again.')
-      setTimeout(() => setAttachError(''), 4000)
-      return
-    }
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    stageFile(file)
+  }
 
-    const tempId = `temp-${timestamp}`
-    const attachmentFields = {
-      file_name: file.name,
-      file_size: file.size,
-      file_type: file.type,
-      storage_path: storagePath,
-    }
-    setMessages((prev) => [...prev, {
-      id: tempId, group_id: groupId, user_id: user.id, content: null, type: 'text',
-      created_at: new Date().toISOString(), ...attachmentFields,
-    }])
-    setUploadingFile(null)
+  const handleChatDragOver = (e) => {
+    e.preventDefault()
+    if (e.dataTransfer.types?.includes('Files')) setIsDragOver(true)
+  }
 
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({ group_id: groupId, user_id: user.id, content: null, type: 'text', ...attachmentFields })
-      .select()
-      .single()
+  const handleChatDragLeave = (e) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
 
-    if (!error && data) {
-      setMessages((prev) => prev.map((m) => m.id === tempId ? data : m))
-      generateSignedUrl(data)
-    } else {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId))
-    }
+  const handleChatDrop = (e) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const files = e.dataTransfer.files
+    if (!files?.length) return
+    if (files.length > 1) flashAttachError('Only one attachment at a time — using the first file.')
+    stageFile(files[0])
+  }
+
+  const openContextMenu = (e, msg) => {
+    const isOwnMsg = msg.user_id === user.id
+    // Nothing to offer on someone else's message unless you're the owner
+    // (who can still pin it) — let the browser's normal context menu
+    // through instead of hijacking it for no reason.
+    if (!isOwnMsg && !isOwner) return
+    e.preventDefault()
+    setConfirmDeleteId(null)
+    setContextMenu({ msgId: msg.id, x: e.clientX, y: e.clientY })
+  }
+
+  const closeContextMenu = () => {
+    setContextMenu(null)
+    setConfirmDeleteId(null)
+  }
+
+  const startEdit = (msg) => {
+    setEditingId(msg.id)
+    setEditText(msg.content || '')
+    setContextMenu(null)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditText('')
+  }
+
+  const saveEdit = async (msg) => {
+    const trimmed = editText.trim()
+    if (!trimmed && !msg.storage_path) { cancelEdit(); return }
+    const newContent = trimmed || null
+    if (newContent === msg.content) { cancelEdit(); return }
+
+    const editedAt = new Date().toISOString()
+    setMessages((prev) => prev.map((m) => m.id === msg.id ? { ...m, content: newContent, edited_at: editedAt } : m))
+    cancelEdit()
+
+    await supabase.from('messages').update({ content: newContent, edited_at: editedAt }).eq('id', msg.id)
+  }
+
+  const handleDeleteMessage = async (msg) => {
+    setConfirmDeleteId(null)
+    setContextMenu(null)
+    if (pinnedMessage?.id === msg.id) handleUnpin()
+    setMessages((prev) => prev.filter((m) => m.id !== msg.id))
+    if (msg.storage_path) await supabase.storage.from('chat-uploads').remove([msg.storage_path])
+    await supabase.from('messages').delete().eq('id', msg.id)
   }
 
   const handleDownloadFile = async (msg) => {
@@ -301,6 +414,14 @@ export default function GroupChat() {
       a.click()
       a.remove()
     }
+  }
+
+  // Opens the file's already-fetched signed URL directly (no download
+  // flag), so PDFs and text files render in the browser's own viewer
+  // instead of being forced to disk.
+  const handleOpenFile = (msg) => {
+    const url = signedUrls[msg.id]
+    if (url) window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   const handleSessionCreated = (session) => {
@@ -380,6 +501,7 @@ export default function GroupChat() {
 
   const memberCount = Object.keys(members).length
   const isOwner = members[user.id]?.role === 'owner'
+  const contextMenuMsg = contextMenu ? messages.find((m) => m.id === contextMenu.msgId) : null
   const now = new Date()
   // A session counts as "past" once it has ENDED, not merely once it has
   // started — otherwise an in-progress session (start_time passed, end_time
@@ -563,7 +685,12 @@ export default function GroupChat() {
 
       {/* Chat tab */}
       {tab === 'chat' && (
-        <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
+        <div
+          className="flex-1 flex flex-col min-h-0 relative overflow-hidden"
+          onDragOver={handleChatDragOver}
+          onDragLeave={handleChatDragLeave}
+          onDrop={handleChatDrop}
+        >
           {/* Subtle ambient glow — contained to this tab, doesn't bleed elsewhere */}
           <div
             className="absolute inset-x-0 top-0 pointer-events-none"
@@ -574,6 +701,16 @@ export default function GroupChat() {
             }}
             aria-hidden="true"
           />
+
+          {/* Drag-and-drop overlay */}
+          {isDragOver && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-app-bg/90 backdrop-blur-sm border-2 border-dashed border-ucf-gold/60 m-2 rounded-2xl pointer-events-none">
+              <div className="text-center">
+                <Paperclip className="w-7 h-7 text-ucf-gold mx-auto mb-2" />
+                <p className="text-sm font-medium text-ucf-gold">Drop to send</p>
+              </div>
+            </div>
+          )}
 
           {/* Pinned message banner */}
           {pinnedMessage && (
@@ -618,6 +755,7 @@ export default function GroupChat() {
               const hasAttachment = !!msg.storage_path
               const isImage = hasAttachment && isImageType(msg.file_type)
               const signedUrl = signedUrls[msg.id]
+              const isEditing = editingId === msg.id
 
               return (
                 <React.Fragment key={msg.id}>
@@ -628,7 +766,10 @@ export default function GroupChat() {
                       <div className="flex-1 h-px bg-app-border" />
                     </div>
                   )}
-                  <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isFirstInGroup ? 'mt-3' : 'mt-0.5'} group/msg`}>
+                  <div
+                    className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isFirstInGroup ? 'mt-3' : 'mt-0.5'} group/msg`}
+                    onContextMenu={(e) => !isEditing && openContextMenu(e, msg)}
+                  >
                     {!isOwn && (
                       <div className="w-7 shrink-0 mr-2 self-end mb-0.5">
                         {isFirstInGroup && (
@@ -643,28 +784,46 @@ export default function GroupChat() {
                         <span className="text-xs text-gray-500 px-1">{senderName}</span>
                       )}
                       <div className="flex items-end gap-1.5">
-                        {isOwn && isOwner && (
-                          <button
-                            onClick={() => isPinned ? handleUnpin() : handlePin(msg)}
-                            className="opacity-0 group-hover/msg:opacity-100 transition-opacity duration-150 p-1 text-gray-600 hover:text-ucf-gold"
-                            title={isPinned ? 'Unpin' : 'Pin message'}
-                          >
-                            {isPinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
-                          </button>
-                        )}
-
-                        {hasAttachment ? (
+                        {isEditing ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              autoFocus
+                              value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') { e.preventDefault(); saveEdit(msg) }
+                                if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
+                              }}
+                              placeholder={hasAttachment ? 'Add a caption…' : 'Edit message…'}
+                              className="px-4 py-2.5 rounded-2xl text-sm bg-app-input border border-ucf-gold/50 text-white placeholder-gray-500 focus:outline-none min-w-[160px] max-w-[280px]"
+                            />
+                            <button type="button" onClick={() => saveEdit(msg)} className="p-1.5 text-ucf-gold hover:text-yellow-400 transition-colors" title="Save">
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button type="button" onClick={cancelEdit} className="p-1.5 text-gray-500 hover:text-white transition-colors" title="Cancel">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : hasAttachment ? (
                           isImage ? (
-                            <a
-                              href={signedUrl || undefined}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={`block rounded-2xl overflow-hidden border max-w-[240px] ${
+                            <div
+                              className={`rounded-2xl overflow-hidden border ${
                                 isOwn ? 'border-ucf-gold/30' : 'border-app-border'
                               } ${isPinned ? 'ring-1 ring-ucf-gold/40' : ''}`}
                             >
                               {signedUrl ? (
-                                <img src={signedUrl} alt={msg.file_name || 'attachment'} className="w-full h-auto block" />
+                                <button
+                                  type="button"
+                                  onClick={() => setLightboxMsg(msg)}
+                                  className="block cursor-zoom-in"
+                                  title="Click to view"
+                                >
+                                  <img
+                                    src={signedUrl}
+                                    alt={msg.file_name || 'attachment'}
+                                    className="max-w-[280px] max-h-[280px] w-auto h-auto block"
+                                  />
+                                </button>
                               ) : (
                                 <div className="w-[240px] h-[160px] bg-app-input flex items-center justify-center">
                                   <ImageIcon className="w-6 h-6 text-gray-600" />
@@ -675,25 +834,39 @@ export default function GroupChat() {
                                   {msg.content}
                                 </div>
                               )}
-                            </a>
+                            </div>
                           ) : (
                             <div
+                              onClick={() => canOpenInBrowser(msg.file_type) && handleOpenFile(msg)}
                               className={`px-3 py-2.5 rounded-2xl border flex items-center gap-3 min-w-[220px] ${
                                 isOwn ? 'bg-ucf-gold/10 border-ucf-gold/30' : 'bg-app-input border-app-border'
-                              } ${isPinned ? 'ring-1 ring-ucf-gold/40' : ''}`}
+                              } ${isPinned ? 'ring-1 ring-ucf-gold/40' : ''} ${canOpenInBrowser(msg.file_type) ? 'cursor-pointer' : ''}`}
                             >
                               <FileTypeIcon mimeType={msg.file_type} />
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm text-white font-medium truncate">{msg.file_name}</p>
-                                <p className="text-xs text-gray-500">{formatFileSize(msg.file_size)}</p>
+                                <p className="text-xs text-gray-500">
+                                  {formatFileSize(msg.file_size)}{canOpenInBrowser(msg.file_type) ? ' · click to open' : ''}
+                                </p>
                               </div>
-                              <button
-                                onClick={() => handleDownloadFile(msg)}
-                                className="p-1.5 rounded-lg text-gray-400 hover:text-ucf-gold hover:bg-app-bg transition-colors duration-150 shrink-0"
-                                title="Download"
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                {canOpenInBrowser(msg.file_type) && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleOpenFile(msg) }}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-ucf-gold hover:bg-app-bg transition-colors duration-150"
+                                    title="Open"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDownloadFile(msg) }}
+                                  className="p-1.5 rounded-lg text-gray-400 hover:text-ucf-gold hover:bg-app-bg transition-colors duration-150"
+                                  title="Download"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           )
                         ) : (
@@ -710,17 +883,12 @@ export default function GroupChat() {
                           </div>
                         )}
 
-                        {!isOwn && isOwner && (
-                          <button
-                            onClick={() => isPinned ? handleUnpin() : handlePin(msg)}
-                            className="opacity-0 group-hover/msg:opacity-100 transition-opacity duration-150 p-1 text-gray-600 hover:text-ucf-gold"
-                            title={isPinned ? 'Unpin' : 'Pin message'}
-                          >
-                            {isPinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
-                          </button>
-                        )}
                       </div>
-                      {isLastInGroup && <span className="text-xs text-gray-600 px-1">{formatTime(msg.created_at)}</span>}
+                      {isLastInGroup && (
+                        <span className="text-xs text-gray-600 px-1">
+                          {formatTime(msg.created_at)}{msg.edited_at && ' · edited'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </React.Fragment>
@@ -729,16 +897,128 @@ export default function GroupChat() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="border-t border-app-border px-4 py-3 shrink-0 relative z-10">
-            {uploadingFile && (
-              <div className="flex items-center gap-2 text-xs text-gray-500 mb-2 px-1">
-                <div className="w-3 h-3 border-2 border-gray-600 border-t-ucf-gold rounded-full animate-spin" />
-                Uploading {uploadingFile.name}…
+          {/* Image lightbox */}
+          {lightboxMsg && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/85 backdrop-blur-sm"
+              onClick={() => setLightboxMsg(null)}
+            >
+              <button
+                onClick={() => setLightboxMsg(null)}
+                className="absolute top-5 right-5 text-gray-300 hover:text-white transition-colors"
+                title="Close"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              {signedUrls[lightboxMsg.id] && (
+                <img
+                  src={signedUrls[lightboxMsg.id]}
+                  alt={lightboxMsg.file_name || 'attachment'}
+                  className="max-w-full max-h-full rounded-lg object-contain"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDownloadFile(lightboxMsg) }}
+                className="absolute bottom-5 right-5 flex items-center gap-1.5 text-xs font-medium text-white bg-white/10 hover:bg-white/20 backdrop-blur px-3 py-2 rounded-lg transition-colors duration-150"
+              >
+                <Download className="w-3.5 h-3.5" /> Download
+              </button>
+            </div>
+          )}
+
+          {/* Right-click message context menu */}
+          {contextMenu && contextMenuMsg && (() => {
+            const menuIsOwn = contextMenuMsg.user_id === user.id
+            const menuIsPinned = pinnedMessage?.id === contextMenuMsg.id
+            const menuWidth = 176
+            const left = Math.min(contextMenu.x, window.innerWidth - menuWidth - 8)
+            const top = Math.min(contextMenu.y, window.innerHeight - 160)
+            return (
+              <div
+                ref={contextMenuRef}
+                className="fixed z-50 w-44 card-elevated border rounded-xl shadow-xl overflow-hidden"
+                style={{ left, top }}
+              >
+                {confirmDeleteId === contextMenuMsg.id ? (
+                  <div className="px-3.5 py-3">
+                    <p className="text-xs text-gray-300 mb-2.5">Delete this message?</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleDeleteMessage(contextMenuMsg)}
+                        className="flex-1 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/15 rounded-lg py-1.5 transition-colors duration-150"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="flex-1 text-xs text-gray-400 hover:text-white bg-app-input rounded-lg py-1.5 transition-colors duration-150"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-1">
+                    {menuIsOwn && (
+                      <button
+                        onClick={() => startEdit(contextMenuMsg)}
+                        className="w-full text-left px-3.5 py-2 text-sm text-gray-300 hover:text-white hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </button>
+                    )}
+                    {isOwner && (
+                      <button
+                        onClick={() => { menuIsPinned ? handleUnpin() : handlePin(contextMenuMsg); closeContextMenu() }}
+                        className="w-full text-left px-3.5 py-2 text-sm text-gray-300 hover:text-white hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+                      >
+                        {menuIsPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+                        {menuIsPinned ? 'Unpin' : 'Pin message'}
+                      </button>
+                    )}
+                    {menuIsOwn && (
+                      <button
+                        onClick={() => setConfirmDeleteId(contextMenuMsg.id)}
+                        className="w-full text-left px-3.5 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-app-input transition-colors duration-150 flex items-center gap-2.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    )}
+                    {!menuIsOwn && !isOwner && (
+                      <p className="px-3.5 py-2 text-xs text-gray-600">No actions available</p>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+            )
+          })()}
+
+          <div className="border-t border-app-border px-4 py-3 shrink-0 relative z-10">
             {attachError && (
               <div className="flex items-center gap-1.5 text-xs text-red-400 mb-2 px-1">
                 <AlertCircle className="w-3.5 h-3.5" /> {attachError}
+              </div>
+            )}
+            {pendingAttachment && (
+              <div className="flex items-center gap-2 bg-app-input border border-app-border rounded-xl px-2.5 py-2 mb-2">
+                {pendingAttachment.previewUrl ? (
+                  <img src={pendingAttachment.previewUrl} alt={pendingAttachment.file.name} className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                ) : (
+                  <FileTypeIcon mimeType={pendingAttachment.file.type} />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-white font-medium truncate">{pendingAttachment.file.name}</p>
+                  <p className="text-[11px] text-gray-500">{formatFileSize(pendingAttachment.file.size)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={removePendingAttachment}
+                  className="p-1 text-gray-500 hover:text-red-400 transition-colors shrink-0"
+                  title="Remove attachment"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
             <form
@@ -764,12 +1044,12 @@ export default function GroupChat() {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Message the group…"
+                placeholder={pendingAttachment ? 'Add a caption… (optional)' : 'Message the group…'}
                 className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none text-sm py-1.5"
               />
               <button
                 type="submit"
-                disabled={!input.trim() || sending}
+                disabled={(!input.trim() && !pendingAttachment) || sending}
                 className="bg-ucf-gold text-black font-bold p-2.5 rounded-xl hover:bg-yellow-400 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
               >
                 <Send className="w-4 h-4" />
@@ -830,11 +1110,13 @@ export default function GroupChat() {
 
 function SessionCard({ session, groupId }) {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const sType = session.session_type || (session.is_virtual ? 'online' : 'in_person')
+  const isHybridHost = sType === 'hybrid' && session.created_by === user?.id
 
   const typeBadge = {
     in_person: { label: 'In-Person', cls: 'bg-ucf-gold/10 text-ucf-gold border-ucf-gold/20' },
-    hybrid:    { label: 'Hybrid',    cls: 'bg-ucf-gold/20 text-ucf-gold border-ucf-gold/30' },
+    hybrid:    { label: 'Hybrid',    cls: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
     online:    { label: 'Online',    cls: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
   }[sType] || { label: 'In-Person', cls: 'bg-ucf-gold/10 text-ucf-gold border-ucf-gold/20' }
 
@@ -866,13 +1148,28 @@ function SessionCard({ session, groupId }) {
         {session.location && (
           <div className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /><span>{session.location}</span></div>
         )}
-        {(sType === 'hybrid' || sType === 'online') && (
+        {sType === 'online' && (
           <div className="flex items-center gap-1 text-ucf-gold/70">
             <Video className="w-3.5 h-3.5" />
-            <span>{sType === 'hybrid' ? 'Hybrid — has meeting link' : 'Online meeting'}</span>
+            <span>Online meeting</span>
+          </div>
+        )}
+        {sType === 'hybrid' && !isHybridHost && (
+          <div className="flex items-center gap-1 text-ucf-gold/70">
+            <Video className="w-3.5 h-3.5" />
+            <span>In-person + Meet</span>
           </div>
         )}
       </div>
+
+      {isHybridHost && (
+        <div className="mt-2.5 flex items-start gap-1.5 bg-ucf-gold/10 border border-ucf-gold/20 rounded-lg px-2.5 py-1.5">
+          <Video className="w-3.5 h-3.5 text-ucf-gold shrink-0 mt-0.5" />
+          <p className="text-xs text-ucf-gold/90 leading-snug">
+            You're hosting — join the Meet from your location so remote members can join too.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

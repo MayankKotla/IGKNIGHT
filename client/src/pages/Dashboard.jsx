@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BookOpen, Users, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, Zap, CheckCircle, Trophy, Clock, Video, ChevronDown, List, LayoutGrid, Pencil } from 'lucide-react'
+import { BookOpen, Users, Calendar, Plus, LogOut, MessageSquare, UserCheck, UserPlus, Compass, Search, X, Target, CheckCircle, Trophy, Clock, Video, ChevronDown, ChevronLeft, ChevronRight, List, LayoutGrid, Pencil, MapPin, Flame } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import CreateGroupModal from '../components/CreateGroupModal'
@@ -52,8 +52,17 @@ function computeGroupCardMeta(g, groupMeta, userId) {
   const nextSession = groupMeta.nextSessions?.[g.id]
   const isOwnMsg = lastMsg?.user_id === userId
   const senderLabel = isOwnMsg ? 'You' : (lastMsg?.users?.full_name?.split(' ')[0] ?? null)
+  // Attachment-only messages have no content (content is nullable since the
+  // chat-attachments migration), so fall back to a file/photo label instead
+  // of calling string methods on null.
+  const attachmentLabel = lastMsg?.storage_path
+    ? (lastMsg.file_type?.startsWith('image/') ? '📷 Photo' : `📎 ${lastMsg.file_name || 'File'}`)
+    : null
+  const bodyPreview = lastMsg?.content
+    ? (lastMsg.content.length > 48 ? lastMsg.content.slice(0, 48) + '…' : lastMsg.content)
+    : attachmentLabel
   const preview = lastMsg
-    ? `${senderLabel ? senderLabel + ': ' : ''}${lastMsg.content.length > 48 ? lastMsg.content.slice(0, 48) + '…' : lastMsg.content}`
+    ? `${senderLabel ? senderLabel + ': ' : ''}${bodyPreview ?? ''}`
     : null
   return { memberCount, lastMsg, nextSession, preview }
 }
@@ -256,6 +265,7 @@ export default function Dashboard() {
   }, [user])
 
   const [sidebarExpanded, setSidebarExpanded] = useState(false)
+  const [sessionsViewMode, setSessionsViewMode] = useState('agenda')
   const firstName = user?.user_metadata?.full_name?.split(' ')[0] || 'Knight'
 
   return (
@@ -433,11 +443,15 @@ export default function Dashboard() {
             })()}
           </div>
         )}
-        <div className="flex-1 max-w-5xl w-full mx-auto px-8 py-10">
+        <div
+          className={`flex-1 w-full mx-auto px-8 py-10 transition-[max-width] duration-200 ${
+            activeTab === 'sessions' && sessionsViewMode === 'calendar' ? 'max-w-[1400px]' : 'max-w-5xl'
+          }`}
+        >
           <div key={activeTab} className="tab-enter">
             {activeTab === 'home' && <HomeTab firstName={firstName} onGoToDiscover={() => setActiveTab('discover')} />}
             {activeTab === 'discover' && <DiscoveryTab />}
-            {activeTab === 'sessions' && <SessionsTab />}
+            {activeTab === 'sessions' && <SessionsTab viewMode={sessionsViewMode} onViewModeChange={setSessionsViewMode} />}
             {activeTab === 'profile' && <ProfileTab />}
           </div>
         </div>
@@ -490,7 +504,7 @@ function HomeTab({ firstName, onGoToDiscover }) {
         supabase.from('sessions').select('id').in('group_id', groupIds).gte('start_time', weekStart.toISOString()),
         supabase.from('messages').select('id, group_id, user_id, created_at').in('group_id', groupIds).neq('user_id', user.id),
         supabase.from('group_members').select('group_id').in('group_id', groupIds),
-        supabase.from('messages').select('group_id, content, user_id, created_at, users(full_name)').in('group_id', groupIds).order('created_at', { ascending: false }).limit(50),
+        supabase.from('messages').select('group_id, content, user_id, created_at, file_name, file_type, storage_path, users(full_name)').in('group_id', groupIds).order('created_at', { ascending: false }).limit(50),
         supabase.from('sessions').select('group_id, title, start_time').in('group_id', groupIds).gte('start_time', new Date().toISOString()).order('start_time', { ascending: true }),
       ])
 
@@ -663,6 +677,7 @@ function ProfileTab() {
   const navigate = useNavigate()
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(true)
+  const [groupFilter, setGroupFilter] = useState('all')
 
   useEffect(() => {
     if (!user) return
@@ -678,12 +693,27 @@ function ProfileTab() {
     fetchResults()
   }, [user])
 
-  const avgScore = results.length > 0
-    ? (results.reduce((sum, r) => sum + r.score, 0) / results.length).toFixed(1)
+  const groupOptions = []
+  const seenGroupIds = new Set()
+  for (const r of results) {
+    const session = r.quizzes?.sessions
+    const group = session?.groups
+    if (session?.group_id && group && !seenGroupIds.has(session.group_id)) {
+      seenGroupIds.add(session.group_id)
+      groupOptions.push({ id: session.group_id, name: group.name, code: group.courses?.code })
+    }
+  }
+
+  const filteredResults = groupFilter === 'all'
+    ? results
+    : results.filter((r) => r.quizzes?.sessions?.group_id === groupFilter)
+
+  const avgScore = filteredResults.length > 0
+    ? (filteredResults.reduce((sum, r) => sum + r.score, 0) / filteredResults.length).toFixed(1)
     : '—'
 
   let streak = 0
-  for (const r of results) {
+  for (const r of filteredResults) {
     if (r.score >= 3) streak++
     else break
   }
@@ -693,11 +723,11 @@ function ProfileTab() {
       <h1 className="text-2xl font-semibold tracking-tight text-white mb-1 uppercase">KnightCheck Stats</h1>
       <p className="text-sm text-gray-500 mb-6">Your quiz performance across all study sessions</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         {[
           { label: 'Average Score', value: avgScore === '—' ? '—' : `${avgScore}/5`, icon: Trophy },
-          { label: 'Retention Streak', value: streak > 0 ? `${streak} 🔥` : '0', icon: Zap },
-          { label: 'Quizzes Taken', value: results.length, icon: Target },
+          { label: 'Retention Streak', value: streak, icon: Flame },
+          { label: 'Quizzes Taken', value: filteredResults.length, icon: Target },
         ].map(({ label, value, icon: Icon }) => (
           <div key={label} className="card border border-app-border rounded-2xl p-6">
             <div className="mb-4">
@@ -715,9 +745,40 @@ function ProfileTab() {
         ))}
       </div>
 
+      {!loading && filteredResults.length > 0 && <ScoreSparkline results={filteredResults} />}
+
       <DashDivider />
 
-      <h2 className="text-base font-semibold text-white mb-4">Quiz History</h2>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <h2 className="text-base font-semibold text-white">Quiz History</h2>
+        {!loading && groupOptions.length > 1 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => setGroupFilter('all')}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors duration-150 ${
+                groupFilter === 'all'
+                  ? 'bg-ucf-gold text-black border-ucf-gold font-semibold'
+                  : 'bg-app-input border-app-border text-gray-400 hover:text-white hover:border-gray-600'
+              }`}
+            >
+              All
+            </button>
+            {groupOptions.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => setGroupFilter(g.id)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors duration-150 ${
+                  groupFilter === g.id
+                    ? 'bg-ucf-gold text-black border-ucf-gold font-semibold'
+                    : 'bg-app-input border-app-border text-gray-400 hover:text-white hover:border-gray-600'
+                }`}
+              >
+                {g.code || g.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <div className="space-y-2">
@@ -735,7 +796,7 @@ function ProfileTab() {
             </div>
           ))}
         </div>
-      ) : results.length === 0 ? (
+      ) : filteredResults.length === 0 ? (
         <div className="card border border-app-border rounded-2xl p-8 text-center">
           <Target className="w-10 h-10 text-gray-700 mx-auto mb-3" />
           <p className="text-gray-400 text-sm">No quizzes taken yet.</p>
@@ -743,12 +804,14 @@ function ProfileTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {results.map((r) => {
+          {filteredResults.map((r) => {
             const quiz = r.quizzes
             const session = quiz?.sessions
             const group = session?.groups
-            const pct = Math.round((r.score / 5) * 100)
             const passed = r.score >= 3
+            const topics = quiz?.topics || []
+            const visibleTopics = topics.slice(0, 3)
+            const extraTopics = topics.length - visibleTopics.length
 
             return (
               <div
@@ -764,17 +827,19 @@ function ProfileTab() {
                   <p className="text-xs text-ucf-gold/80 truncate">
                     {group?.courses?.code && `${group.courses.code} · `}{group?.name}
                   </p>
-                  {quiz?.topics?.length > 0 && (
+                  {visibleTopics.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {quiz.topics.map((t) => (
+                      {visibleTopics.map((t) => (
                         <span key={t} className="text-xs bg-app-input border border-app-border text-gray-500 px-1.5 py-0.5 rounded-full">{t}</span>
                       ))}
+                      {extraTopics > 0 && (
+                        <span className="text-xs text-gray-600 px-1.5 py-0.5">+{extraTopics} more</span>
+                      )}
                     </div>
                   )}
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className={`text-xs font-semibold mb-1 ${passed ? 'text-green-400' : 'text-red-400'}`}>{pct}%</div>
-                  <p className="text-xs text-gray-600">{timeAgo(r.completed_at)}</p>
+                  <p className="text-xs text-gray-400 font-medium">{timeAgo(r.completed_at)}</p>
                 </div>
               </div>
             )
@@ -785,33 +850,68 @@ function ProfileTab() {
   )
 }
 
-function GroupDiscoveryCard({ group, isJoined, isJoining, onJoin }) {
-  const memberCount = group.group_members?.length ?? 0
-  const isFull = memberCount >= group.max_members
+function ScoreSparkline({ results }) {
+  const chronological = results.slice(0, 12).slice().reverse()
+  if (chronological.length === 0) return null
 
   return (
-    <div className="card border border-app-border rounded-2xl p-4 flex items-center gap-3 hover:border-ucf-gold/20 transition-colors duration-200">
-      <div className="w-9 h-9 bg-ucf-gold/10 rounded-xl flex items-center justify-center shrink-0">
-        <Users className="w-4 h-4 text-ucf-gold" />
+    <div className="card border border-app-border rounded-2xl p-5 mb-6">
+      <p className="text-xs text-gray-500 uppercase tracking-widest font-medium mb-4">Recent Trend</p>
+      <div className="flex items-end gap-1.5 h-16">
+        {chronological.map((r) => {
+          const heightPct = Math.max(12, Math.round((r.score / 5) * 100))
+          const passed = r.score >= 3
+          return (
+            <div
+              key={r.id}
+              title={`${r.score}/5 · ${new Date(r.completed_at).toLocaleDateString()}`}
+              className={`flex-1 rounded-t-md transition-colors duration-200 ${
+                passed ? 'bg-green-500/60 hover:bg-green-500/80' : 'bg-red-500/60 hover:bg-red-500/80'
+              }`}
+              style={{ height: `${heightPct}%` }}
+            />
+          )
+        })}
+      </div>
+      {chronological.length > 1 && (
+        <div className="flex items-center justify-between mt-2 text-[10px] text-gray-600">
+          <span>Oldest</span>
+          <span>Most recent</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GroupDiscoveryCard({ group, isJoined, isJoining, onJoin }) {
+  const memberCount = group.group_members?.length ?? 0
+  const maxMembers = group.max_members || 0
+  const isFull = maxMembers > 0 && memberCount >= maxMembers
+  const subjectPrefix = group.courses?.code?.split(' ')[0] || null
+
+  return (
+    <div
+      className={`card border border-app-border rounded-2xl p-4 flex items-center gap-3.5 transition-colors duration-200 ${
+        isFull && !isJoined ? 'opacity-60' : 'hover:border-ucf-gold/25'
+      }`}
+    >
+      <div className="w-11 h-11 bg-ucf-gold/10 rounded-xl flex items-center justify-center shrink-0">
+        {subjectPrefix ? (
+          <span className="text-ucf-gold text-[11px] font-bold tracking-tight">{subjectPrefix}</span>
+        ) : (
+          <Users className="w-4 h-4 text-ucf-gold" />
+        )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="font-medium text-white text-sm tracking-tight truncate">{group.name}</p>
-          <span className="text-xs text-gray-600 shrink-0">{memberCount} / {group.max_members}</span>
-        </div>
-        {group.courses && (
-          <p className="text-xs text-ucf-gold/80 mt-0.5 truncate">
-            {group.courses.code}
-            {group.courses.name && group.courses.name !== group.courses.code && (
-              <span className="text-gray-600"> · {group.courses.name}</span>
-            )}
-            {formatProfessor(group) && (
-              <span className="text-gray-500"> · {formatProfessor(group)}</span>
-            )}
-          </p>
+        {group.courses?.code && (
+          <p className="text-[11px] text-ucf-gold/80 font-medium uppercase tracking-wide">{group.courses.code}</p>
         )}
+        <p className="font-medium text-white text-sm tracking-tight truncate">{group.name}</p>
+        <p className="text-xs text-gray-600 mt-0.5 truncate">
+          {[formatProfessor(group), maxMembers ? `${memberCount}/${maxMembers} members` : null].filter(Boolean).join(' · ')}
+        </p>
         {group.description && (
-          <p className="text-xs text-gray-600 mt-1 truncate">{group.description}</p>
+          <p className="text-xs text-gray-700 mt-1 truncate">{group.description}</p>
         )}
       </div>
       <div className="shrink-0">
@@ -967,7 +1067,6 @@ function DiscoveryTab() {
         </div>
       ) : (
         <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Recently Created</p>
           <div className="space-y-2">
             {recent.map((g) => (
               <GroupDiscoveryCard
@@ -1034,7 +1133,26 @@ function formatSessionTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function SessionsTab() {
+const SESSION_BUCKET_ORDER = ['Today', 'Tomorrow', 'This Week', 'Later']
+
+const CALENDAR_TYPE_CHIP = {
+  in_person: 'bg-ucf-gold/10 text-ucf-gold hover:bg-ucf-gold/20',
+  hybrid: 'bg-purple-500/10 text-purple-400 hover:bg-purple-500/20',
+  online: 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20',
+}
+
+function sessionDateBucket(iso) {
+  const d = new Date(iso)
+  const now = new Date()
+  const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const diffDays = Math.round((startOfDay(d) - startOfDay(now)) / 86400000)
+  if (diffDays <= 0) return 'Today'
+  if (diffDays === 1) return 'Tomorrow'
+  if (diffDays <= 6) return 'This Week'
+  return 'Later'
+}
+
+function SessionsTab({ viewMode, onViewModeChange }) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [sessions, setSessions] = useState([])
@@ -1094,6 +1212,13 @@ function SessionsTab() {
     )
   }
 
+  const sessionBuckets = {}
+  for (const s of sessions) {
+    const bucket = sessionDateBucket(s.start_time)
+    if (!sessionBuckets[bucket]) sessionBuckets[bucket] = []
+    sessionBuckets[bucket].push(s)
+  }
+
   return (
     <div>
       {showModal && (
@@ -1103,32 +1228,56 @@ function SessionsTab() {
         />
       )}
 
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-white uppercase">Sessions</h1>
           <p className="text-sm text-gray-500 mt-1">Upcoming study sessions across your groups</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 bg-ucf-gold text-black font-bold px-3.5 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
-        >
-          <Plus className="w-3.5 h-3.5" /> Schedule
-        </button>
+        <div className="flex items-center gap-2">
+          {!loading && sessions.length > 0 && (
+            <div className="flex items-center gap-0.5 bg-app-input border border-app-border rounded-lg p-0.5">
+              <button
+                onClick={() => onViewModeChange('agenda')}
+                aria-label="List view"
+                aria-pressed={viewMode === 'agenda'}
+                className={`p-1.5 rounded-md transition-colors duration-150 ${
+                  viewMode === 'agenda' ? 'bg-ucf-gold/15 text-ucf-gold' : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => onViewModeChange('calendar')}
+                aria-label="Calendar view"
+                aria-pressed={viewMode === 'calendar'}
+                className={`p-1.5 rounded-md transition-colors duration-150 ${
+                  viewMode === 'calendar' ? 'bg-ucf-gold/15 text-ucf-gold' : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-1.5 bg-ucf-gold text-black font-bold px-3.5 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
+          >
+            <Plus className="w-3.5 h-3.5" /> Schedule
+          </button>
+        </div>
       </div>
 
       {loading ? (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="card border border-app-border rounded-2xl p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0 space-y-2">
-                  <SkeletonLine className="h-4 w-40" />
-                  <SkeletonLine className="h-2.5 w-28" />
-                </div>
-                <div className="shrink-0 space-y-2 text-right">
-                  <SkeletonLine className="h-3.5 w-20 ml-auto" />
-                  <SkeletonLine className="h-2.5 w-16 ml-auto" />
-                </div>
+            <div key={i} className="card border border-app-border rounded-2xl p-4 flex gap-4">
+              <div className="shrink-0 w-16 border-r border-app-border pr-4 flex flex-col items-center justify-center gap-1.5">
+                <SkeletonLine className="h-3.5 w-10" />
+                <SkeletonLine className="h-2 w-8" />
+              </div>
+              <div className="flex-1 min-w-0 space-y-2 py-1">
+                <SkeletonLine className="h-4 w-40" />
+                <SkeletonLine className="h-2.5 w-28" />
               </div>
             </div>
           ))}
@@ -1145,68 +1294,247 @@ function SessionsTab() {
             <Plus className="w-4 h-4" /> Schedule a session
           </button>
         </div>
+      ) : viewMode === 'calendar' ? (
+        <SessionsCalendarView
+          sessions={sessions}
+          navigate={navigate}
+        />
       ) : (
-        <div className="space-y-3">
-          {sessions.map((s) => {
-            const count = (attendees[s.id] || []).length
-            const isAttending = (attendees[s.id] || []).includes(user.id)
-            const sType = s.session_type || (s.is_virtual ? 'online' : 'in_person')
+        <div className="space-y-7">
+          {SESSION_BUCKET_ORDER.filter((bucket) => sessionBuckets[bucket]?.length).map((bucket) => (
+            <section key={bucket}>
+              <div className="flex items-center gap-3 mb-3">
+                <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold shrink-0">{bucket}</p>
+                <div className="flex-1 h-px bg-app-border" />
+              </div>
+              <div className="space-y-3">
+                {sessionBuckets[bucket].map((s) => (
+                  <DashboardSessionCard
+                    key={s.id}
+                    session={s}
+                    count={(attendees[s.id] || []).length}
+                    isAttending={(attendees[s.id] || []).includes(user.id)}
+                    userId={user.id}
+                    showFullDate={bucket === 'This Week' || bucket === 'Later'}
+                    onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`, { state: { from: 'dashboard-sessions' } })}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
+function SessionsCalendarView({ sessions, navigate }) {
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })
+
+  const year = calendarMonth.getFullYear()
+  const month = calendarMonth.getMonth()
+  const firstDow = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const today = new Date()
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month
+
+  const sessionsByDay = {}
+  for (const s of sessions) {
+    const d = new Date(s.start_time)
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const day = d.getDate()
+      if (!sessionsByDay[day]) sessionsByDay[day] = []
+      sessionsByDay[day].push(s)
+    }
+  }
+  for (const day in sessionsByDay) {
+    sessionsByDay[day].sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
+  }
+
+  const cells = Array(firstDow).fill(null).concat(
+    Array.from({ length: daysInMonth }, (_, i) => i + 1)
+  )
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const isToday = (day) => isCurrentMonth && today.getDate() === day
+
+  const goToday = () => {
+    const now = new Date()
+    setCalendarMonth(new Date(now.getFullYear(), now.getMonth(), 1))
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setCalendarMonth(new Date(year, month - 1, 1))}
+            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-app-input transition-colors duration-150"
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <p className="text-lg font-semibold text-white tracking-tight min-w-[170px] text-center">
+            {calendarMonth.toLocaleDateString([], { month: 'long', year: 'numeric' })}
+          </p>
+          <button
+            onClick={() => setCalendarMonth(new Date(year, month + 1, 1))}
+            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-app-input transition-colors duration-150"
+            aria-label="Next month"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          {!isCurrentMonth && (
+            <button
+              onClick={goToday}
+              className="ml-2 text-xs font-medium text-ucf-gold hover:text-yellow-400 bg-ucf-gold/10 border border-ucf-gold/20 px-3 py-1.5 rounded-lg transition-colors duration-150"
+            >
+              Today
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-4 text-xs text-gray-500">
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-ucf-gold" />In-person</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-400" />Hybrid</span>
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" />Online</span>
+        </div>
+      </div>
+
+      <div className="card border border-app-border rounded-2xl overflow-hidden">
+        <div className="grid grid-cols-7 bg-app-input/60">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+            <div key={d} className="text-center text-[11px] text-white uppercase tracking-widest font-semibold py-2.5 border-b border-app-border">
+              {d}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {cells.map((day, i) => {
+            if (!day) {
+              return <div key={i} className="min-h-[130px] border-r border-b border-app-border/60 bg-app-bg/40" />
+            }
+            const daySessions = sessionsByDay[day] || []
+            const todayCell = isToday(day)
             return (
               <div
-                key={s.id}
-                onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`, { state: { from: 'dashboard-sessions' } })}
-                className="card border border-app-border rounded-2xl p-5 cursor-pointer hover:border-ucf-gold/30 transition-colors duration-200"
+                key={i}
+                className={`min-h-[130px] p-2 border-r border-b border-app-border/60 transition-colors duration-150 ${
+                  todayCell ? 'bg-ucf-gold/[0.04]' : 'hover:bg-app-input/20'
+                }`}
               >
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-semibold text-white tracking-tight">{s.title}</p>
-                      {isAttending && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-ucf-gold/10 text-ucf-gold border border-ucf-gold/20 px-2 py-0.5 rounded-full">
-                          <UserCheck className="w-3 h-3" /> Attending
-                        </span>
-                      )}
-                      {sType !== 'in_person' && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                          sType === 'hybrid'
-                            ? 'text-ucf-gold/80 bg-ucf-gold/10 border-ucf-gold/20'
-                            : 'text-blue-400 bg-blue-500/10 border-blue-500/20'
-                        }`}>
-                          {sType === 'hybrid' ? 'Hybrid' : 'Online'}
-                        </span>
-                      )}
-                    </div>
-                    {s.groups && (
-                      <p className="text-xs text-ucf-gold/80 mt-0.5">
-                        {s.groups.courses?.code && `${s.groups.courses.code} · `}
-                        {s.groups.name}
-                      </p>
-                    )}
-                    {s.topics?.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {s.topics.map((t) => (
-                          <span key={t} className="text-xs bg-app-input border border-app-border text-gray-400 px-2 py-0.5 rounded-full">{t}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-semibold text-white tracking-tight">{formatSessionDate(s.start_time)}</p>
-                    <p className="text-gray-500 text-xs mt-0.5">
-                      {formatSessionTime(s.start_time)}
-                      {s.end_time && ` – ${formatSessionTime(s.end_time)}`}
-                    </p>
-                    {count > 0 && (
-                      <p className="text-xs text-gray-600 mt-1">{count} attending</p>
-                    )}
-                  </div>
+                {todayCell ? (
+                  <span className="w-6 h-6 rounded-full bg-ucf-gold text-black flex items-center justify-center text-xs font-bold mb-1.5">
+                    {day}
+                  </span>
+                ) : (
+                  <p className="text-xs text-white font-medium mb-1.5 px-0.5">{day}</p>
+                )}
+                <div className="space-y-1">
+                  {daySessions.slice(0, 3).map((s) => {
+                    const sType = s.session_type || (s.is_virtual ? 'online' : 'in_person')
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`, { state: { from: 'dashboard-sessions' } })}
+                        className={`w-full text-left text-[11px] leading-tight px-1.5 py-1 rounded-md truncate transition-colors duration-150 ${
+                          CALENDAR_TYPE_CHIP[sType] || CALENDAR_TYPE_CHIP.in_person
+                        }`}
+                        title={s.title}
+                      >
+                        <span className="font-medium">{formatSessionTime(s.start_time)}</span> {s.title}
+                      </button>
+                    )
+                  })}
+                  {daySessions.length > 3 && (
+                    <p className="text-[10px] text-gray-600 px-1.5">+{daySessions.length - 3} more</p>
+                  )}
                 </div>
               </div>
             )
           })}
         </div>
-      )}
+      </div>
+    </div>
+  )
+}
+
+function DashboardSessionCard({ session: s, count, isAttending, userId, showFullDate, onClick }) {
+  const sType = s.session_type || (s.is_virtual ? 'online' : 'in_person')
+  const isHybridHost = sType === 'hybrid' && s.created_by === userId
+  const typeBadge = {
+    in_person: { label: 'In-Person', cls: 'text-ucf-gold/80 bg-ucf-gold/10 border-ucf-gold/20' },
+    hybrid:    { label: 'Hybrid',    cls: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+    online:    { label: 'Online',    cls: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
+  }[sType] || { label: 'In-Person', cls: 'text-ucf-gold/80 bg-ucf-gold/10 border-ucf-gold/20' }
+
+  return (
+    <div
+      onClick={onClick}
+      className="group card border border-app-border rounded-2xl p-4 cursor-pointer hover:border-ucf-gold/30 transition-colors duration-200 flex gap-4"
+    >
+      <div className="shrink-0 w-16 border-r border-app-border pr-4 flex flex-col items-center justify-center text-center">
+        {showFullDate && (
+          <p className="text-[10px] text-gray-500 uppercase tracking-wide">
+            {new Date(s.start_time).toLocaleDateString([], { weekday: 'short' })}
+          </p>
+        )}
+        <p className="text-sm font-bold text-white leading-tight mt-0.5">
+          {formatSessionTime(s.start_time)}
+        </p>
+        {showFullDate && (
+          <p className="text-[10px] text-gray-600 mt-0.5">
+            {new Date(s.start_time).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+          </p>
+        )}
+      </div>
+
+      <div className="flex-1 min-w-0 py-0.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="font-semibold text-white tracking-tight group-hover:text-ucf-gold transition-colors duration-200">{s.title}</p>
+          {isAttending && (
+            <span className="inline-flex items-center gap-1 text-xs bg-ucf-gold/10 text-ucf-gold border border-ucf-gold/20 px-2 py-0.5 rounded-full">
+              <UserCheck className="w-3 h-3" /> Attending
+            </span>
+          )}
+          <span className={`text-xs px-2 py-0.5 rounded-full border ${typeBadge.cls}`}>
+            {typeBadge.label}
+          </span>
+        </div>
+        {s.groups && (
+          <p className="text-xs text-ucf-gold/80 mt-0.5">
+            {s.groups.courses?.code && `${s.groups.courses.code} · `}
+            {s.groups.name}
+          </p>
+        )}
+        {s.location && (
+          <div className="flex items-center gap-1 text-gray-500 text-xs mt-1.5">
+            <MapPin className="w-3 h-3" />
+            <span className="truncate">{s.location}</span>
+          </div>
+        )}
+        {s.topics?.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {s.topics.map((t) => (
+              <span key={t} className="text-xs bg-app-input border border-app-border text-gray-400 px-2 py-0.5 rounded-full">{t}</span>
+            ))}
+          </div>
+        )}
+        {isHybridHost && (
+          <div className="mt-2.5 flex items-start gap-1.5 bg-ucf-gold/10 border border-ucf-gold/20 rounded-lg px-2.5 py-1.5 max-w-sm">
+            <Video className="w-3.5 h-3.5 text-ucf-gold shrink-0 mt-0.5" />
+            <p className="text-xs text-ucf-gold/90 leading-snug">
+              You're hosting — join the Meet from your location so remote members can join too.
+            </p>
+          </div>
+        )}
+        {count > 0 && (
+          <p className="text-xs text-gray-600 mt-1.5">{count} {count === 1 ? 'person' : 'people'} attending</p>
+        )}
+      </div>
     </div>
   )
 }

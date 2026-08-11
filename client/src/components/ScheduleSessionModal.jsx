@@ -425,37 +425,46 @@ export default function ScheduleSessionModal({ groupId = null, onClose, onCreate
             <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wide">
               Topics * <span className="normal-case text-gray-600 font-normal">(for KnightCheck quiz)</span>
             </label>
-            <div
-              className="flex flex-wrap gap-1.5 bg-app-input border border-app-border rounded-xl px-3 py-2 focus-within:border-ucf-gold/60 focus-within:ring-1 focus-within:ring-ucf-gold/25 transition-all duration-200 cursor-text min-h-[44px]"
-              onClick={() => document.getElementById('topic-input').focus()}
-            >
-              {topics.map((t, i) => (
-                <span key={i} className="flex items-center gap-1 bg-ucf-gold/15 text-ucf-gold text-xs px-2 py-0.5 rounded-full shrink-0">
-                  {t}
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); removeTopic(i) }}
-                    className="text-ucf-gold/60 hover:text-ucf-gold transition-colors"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                </span>
-              ))}
+            <p className="text-xs text-gray-600 mb-2">
+              Add each topic separately so KnightCheck can generate questions per topic.
+            </p>
+            <div className="flex gap-2">
               <input
                 id="topic-input"
                 value={topicInput}
                 onChange={(e) => setTopicInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { e.preventDefault(); addTopic() }
-                  if (e.key === 'Backspace' && !topicInput && topics.length > 0) {
-                    setTopics((prev) => prev.slice(0, -1))
-                  }
                 }}
-                onBlur={addTopic}
-                placeholder={topics.length === 0 ? 'e.g. Recursion (press Enter to add)' : 'Add topic…'}
-                className="flex-1 min-w-[120px] bg-transparent outline-none text-sm text-white placeholder-gray-600 py-0.5"
+                placeholder="e.g. Recursion"
+                className={`${inputClass} flex-1`}
               />
+              <button
+                type="button"
+                onClick={addTopic}
+                disabled={!topicInput.trim()}
+                title="Add topic"
+                className="shrink-0 w-11 rounded-xl bg-ucf-gold/15 text-ucf-gold border border-ucf-gold/30 hover:bg-ucf-gold/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 flex items-center justify-center"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
             </div>
+            {topics.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {topics.map((t, i) => (
+                  <span key={i} className="flex items-center gap-1 bg-ucf-gold/15 text-ucf-gold text-xs px-2.5 py-1 rounded-full">
+                    {t}
+                    <button
+                      type="button"
+                      onClick={() => removeTopic(i)}
+                      className="text-ucf-gold/60 hover:text-ucf-gold transition-colors"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
