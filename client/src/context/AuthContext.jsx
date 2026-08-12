@@ -24,7 +24,16 @@ export function AuthProvider({ children }) {
     supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: {
+        data: { full_name: fullName },
+        // Without this, Supabase sends the confirmation link to whatever
+        // the project's default Site URL is, which isn't a page this app
+        // ever renders meaningfully. Requires this exact URL to be added
+        // to Supabase's Authentication > URL Configuration > Redirect URLs
+        // allow-list, or Supabase silently falls back to the Site URL
+        // instead.
+        emailRedirectTo: `${window.location.origin}/verify-email`,
+      },
     })
 
   const signIn = ({ email, password }) =>

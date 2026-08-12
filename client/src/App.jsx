@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
+import VerifyEmail from './pages/VerifyEmail'
 import Dashboard from './pages/Dashboard'
 import GroupChat from './pages/GroupChat'
 import SessionDetail from './pages/SessionDetail'
@@ -27,6 +28,12 @@ export default function App() {
           bounce them straight to /dashboard before they can set a new
           password. ResetPassword handles its own recovery-session check. */}
       <Route path="/reset-password" element={<ResetPassword />} />
+      {/* Same reasoning as /reset-password above: the emailed confirmation
+          link establishes a real session, so this can't be wrapped in
+          PublicRoute or a still-verifying user would get bounced to
+          /dashboard before VerifyEmail gets to show the success message
+          and sign them back out. */}
+      <Route path="/verify-email" element={<VerifyEmail />} />
       {/* Plain routes, not wrapped in PublicRoute or ProtectedRoute — these
           are content pages that should render the same whether you're
           logged in or not, so neither the "kick logged-in users to
