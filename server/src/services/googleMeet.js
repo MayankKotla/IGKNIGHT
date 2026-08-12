@@ -55,16 +55,33 @@ async function createMeetLink({ title, startTime, endTime }) {
     // etc.) the Meet link itself still works fine — guests just have to be
     // let in manually — so a failure here must not fail session creation.
     try {
+      const withTimeout = (promise, label) => Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`Timed out ${label}`)), TIMEOUT_MS)),
+      ])
+
       const meetingCode = new URL(uri).pathname.replace(/^\//, '')
-      const patchPromise = oauth2Client.request({
-        url: `https://meet.googleapis.com/v2/spaces/${meetingCode}?updateMask=config.accessType`,
-        method: 'PATCH',
-        data: { config: { accessType: 'OPEN' } },
-      })
-      const patchTimeoutGuard = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timed out setting Meet access type')), TIMEOUT_MS)
+
+      // The Meet API's PATCH method only accepts the canonical
+      // spaces/{space} resource name — the meetingCode alias (which is all
+      // we get back from the Calendar API) works for GET but is rejected by
+      // PATCH with a "Permission denied" error. So resolve the real name
+      // via GET first.
+      const spaceRes = await withTimeout(
+        oauth2Client.request({ url: `https://meet.googleapis.com/v2/spaces/${meetingCode}`, method: 'GET' }),
+        'looking up Meet space'
       )
-      await Promise.race([patchPromise, patchTimeoutGuard])
+      const spaceName = spaceRes.data.name
+      if (!spaceName) throw new Error('Meet space lookup returned no name')
+
+      await withTimeout(
+        oauth2Client.request({
+          url: `https://meet.googleapis.com/v2/${spaceName}?updateMask=config.accessType`,
+          method: 'PATCH',
+          data: { config: { accessType: 'OPEN' } },
+        }),
+        'setting Meet access type'
+      )
     } catch (patchErr) {
       const details = patchErr.response?.data?.error?.message || patchErr.message
       console.error('[GoogleMeet] Could not set open access on Meet space (link still works, but guests may need to be let in manually):', details)
