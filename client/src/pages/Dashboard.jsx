@@ -1608,26 +1608,36 @@ function SessionsCalendarView({ sessions, navigate }) {
         <div className="grid grid-cols-7">
           {cells.map((day, i) => {
             if (!day) {
-              return <div key={i} className="min-h-[130px] border-r border-b border-app-border/60 bg-app-bg/40" />
+              return <div key={i} className="h-[130px] border-r border-b border-app-border/60 bg-app-bg/40" />
             }
             const daySessions = sessionsByDay[day] || []
             const todayCell = isToday(day)
+            const hiddenCount = Math.max(daySessions.length - 3, 0)
             return (
               <div
                 key={i}
-                className={`min-h-[130px] p-2 border-r border-b border-app-border/60 transition-colors duration-150 ${
+                className={`h-[130px] p-2 border-r border-b border-app-border/60 transition-colors duration-150 relative flex flex-col ${
                   todayCell ? 'bg-ucf-gold/[0.04]' : 'hover:bg-app-input/20'
                 }`}
               >
                 {todayCell ? (
-                  <span className="w-6 h-6 rounded-full bg-ucf-gold text-black flex items-center justify-center text-xs font-bold mb-1.5">
+                  <span className="w-6 h-6 rounded-full bg-ucf-gold text-black flex items-center justify-center text-xs font-bold mb-1.5 shrink-0">
                     {day}
                   </span>
                 ) : (
-                  <p className="text-xs text-white font-medium mb-1.5 px-0.5">{day}</p>
+                  // Same h-6 box as the "today" circle badge above, so the
+                  // sessions list below starts at the same vertical offset
+                  // in every cell instead of today's being pushed down by
+                  // the taller circle.
+                  <p className="h-6 flex items-center text-xs text-white font-medium mb-1.5 px-0.5 shrink-0">{day}</p>
                 )}
-                <div className="space-y-1">
-                  {daySessions.slice(0, 3).map((s) => {
+                {/* All of the day's sessions live here, not just the first 3 —
+                    scrollable so nothing is ever truly hidden, with a fading
+                    "+N more" cue at the bottom (below, outside this scroll
+                    container so it doesn't scroll away) that prompts you to
+                    scroll when there's more than fits. */}
+                <div className="flex-1 min-h-0 space-y-1 overflow-y-auto overscroll-contain pr-0.5">
+                  {daySessions.map((s) => {
                     const sType = s.session_type || (s.is_virtual ? 'online' : 'in_person')
                     const isPast = new Date(s.end_time) < today
                     return (
@@ -1643,10 +1653,12 @@ function SessionsCalendarView({ sessions, navigate }) {
                       </button>
                     )
                   })}
-                  {daySessions.length > 3 && (
-                    <p className="text-[10px] text-gray-600 px-1.5">+{daySessions.length - 3} more</p>
-                  )}
                 </div>
+                {hiddenCount > 0 && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-app-bg to-transparent flex items-end justify-center pb-0.5">
+                    <span className="text-[9px] text-gray-400 font-medium">▾ {hiddenCount} more — scroll</span>
+                  </div>
+                )}
               </div>
             )
           })}
