@@ -541,6 +541,11 @@ function HomeTab({ firstName, onGoToDiscover }) {
   const [groups, setGroups] = useState([])
   const [groupMeta, setGroupMeta] = useState({})
   const [loading, setLoading] = useState(true)
+  // Sender names for the group-card preview, keyed by user id. Populated by
+  // fetchAll and read from the realtime handler below (a ref so the
+  // handler's closure always sees the latest map without needing to
+  // resubscribe every time it changes).
+  const userNamesRef = useRef({})
   const [showModal, setShowModal] = useState(false)
   // Remembered across visits so the layout choice sticks.
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('ks:groupViewMode') || 'rows')
@@ -577,7 +582,7 @@ function HomeTab({ firstName, onGoToDiscover }) {
       ] = await Promise.all([
         supabase.from('sessions').select('id').in('group_id', groupIds).gte('start_time', weekStart.toISOString()),
         supabase.from('messages').select('id, group_id, user_id, created_at').in('group_id', groupIds).neq('user_id', user.id),
-        supabase.from('group_members').select('group_id').in('group_id', groupIds),
+        supabase.from('group_members').select('group_id, user_id, users(full_name)').in('group_id', groupIds),
         supabase.from('messages').select('group_id, content, user_id, created_at, file_name, file_type, storage_path, users(full_name)').in('group_id', groupIds).order('created_at', { ascending: false }).limit(50),
       ])
 
@@ -600,11 +605,16 @@ function HomeTab({ firstName, onGoToDiscover }) {
 
       setStats({ groups: memberships.length, sessionsThisWeek: weekSessions?.length ?? 0, newMessages: unreadMessages.length })
 
-      // member counts
+      // member counts, and a userId -> name lookup (used to label live
+      // messages that arrive over realtime below, since those rows don't
+      // come with the users(full_name) join).
       const memberCounts = {}
+      const userNames = {}
       for (const m of allMembers || []) {
         memberCounts[m.group_id] = (memberCounts[m.group_id] || 0) + 1
+        if (m.user_id && m.users?.full_name) userNames[m.user_id] = m.users.full_name
       }
+      userNamesRef.current = userNames
 
       // last message per group (recentMessages is already desc by created_at)
       const lastMessages = {}
@@ -616,6 +626,47 @@ function HomeTab({ firstName, onGoToDiscover }) {
       setLoading(false)
     }
     fetchAll()
+  }, [user])
+
+  // Live updates for group-card previews/unread badges and the "New
+  // Messages" stat. Without this, the dashboard only reflects messages that
+  // existed at the moment it loaded — someone else sending a message never
+  // shows up until the page is reloaded. RLS on the messages table already
+  // scopes SELECT (and therefore realtime delivery) to groups the current
+  // user belongs to, so no group_id filter is needed here.
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel(`dashboard:messages:${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const msg = payload.new
+        if (msg.user_id === user.id) return
+
+        const muted = !!localStorage.getItem(`ks:muted:${msg.group_id}`)
+
+        setGroupMeta((prev) => {
+          // Ignore messages for a group we don't have loaded yet (e.g. we
+          // joined it after this page's initial fetch) rather than showing
+          // a preview/badge for a card that isn't rendered.
+          if (!prev.memberCounts || !(msg.group_id in prev.memberCounts)) return prev
+
+          const senderName = userNamesRef.current[msg.user_id] || null
+          const enriched = { ...msg, users: senderName ? { full_name: senderName } : null }
+
+          return {
+            ...prev,
+            lastMessages: { ...prev.lastMessages, [msg.group_id]: enriched },
+            unreadCounts: muted
+              ? prev.unreadCounts
+              : { ...prev.unreadCounts, [msg.group_id]: (prev.unreadCounts?.[msg.group_id] || 0) + 1 },
+          }
+        })
+
+        if (!muted) setStats((prev) => ({ ...prev, newMessages: prev.newMessages + 1 }))
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [user])
 
   const handleGroupCreated = (group) => setGroups((prev) => [group, ...prev])
