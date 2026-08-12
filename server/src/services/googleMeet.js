@@ -46,6 +46,30 @@ async function createMeetLink({ title, startTime, endTime }) {
 
     const uri = response.data.conferenceData?.entryPoints?.[0]?.uri
     if (!uri) throw new Error('No Meet URI in response')
+
+    // A Meet created this way defaults to requiring the host to manually let
+    // each guest in ("knocking"), since group members aren't added as
+    // calendar attendees. Patch the space to accessType OPEN so anyone with
+    // the link can join directly once the session starts. This is
+    // best-effort: if it fails (missing OAuth scope, Meet API not enabled,
+    // etc.) the Meet link itself still works fine — guests just have to be
+    // let in manually — so a failure here must not fail session creation.
+    try {
+      const meetingCode = new URL(uri).pathname.replace(/^\//, '')
+      const patchPromise = oauth2Client.request({
+        url: `https://meet.googleapis.com/v2/spaces/${meetingCode}?updateMask=config.accessType`,
+        method: 'PATCH',
+        data: { config: { accessType: 'OPEN' } },
+      })
+      const patchTimeoutGuard = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timed out setting Meet access type')), TIMEOUT_MS)
+      )
+      await Promise.race([patchPromise, patchTimeoutGuard])
+    } catch (patchErr) {
+      const details = patchErr.response?.data?.error?.message || patchErr.message
+      console.error('[GoogleMeet] Could not set open access on Meet space (link still works, but guests may need to be let in manually):', details)
+    }
+
     return uri
   } catch (err) {
     const details = err.response?.data?.error_description || err.response?.data?.error?.message || err.message

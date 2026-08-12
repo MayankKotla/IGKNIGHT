@@ -11,7 +11,12 @@ const oauth2Client = new google.auth.OAuth2(
 const authUrl = oauth2Client.generateAuthUrl({
   access_type: 'offline',
   prompt: 'consent',
-  scope: ['https://www.googleapis.com/auth/calendar.events'],
+  scope: [
+    'https://www.googleapis.com/auth/calendar.events',
+    // Needed to patch Meet spaces created via Calendar to accessType OPEN
+    // (so group members can join without being let in one-by-one).
+    'https://www.googleapis.com/auth/meetings.space.settings',
+  ],
 })
 
 async function run() {
