@@ -487,7 +487,7 @@ export default function Dashboard() {
                     <div className="flex items-center gap-3">
                       <Clock className="w-4 h-4 text-ucf-gold shrink-0" />
                       <p className="text-sm text-white">
-                        <span className="font-medium text-ucf-gold">{sessionReminder.title}</span> starts in 30 min
+                        <span className="font-medium text-ucf-gold">{sessionReminder.title}</span> is starting soon
                         {sType === 'in_person' && sessionReminder.location && (
                           <> 📍 {sessionReminder.location}</>
                         )}
