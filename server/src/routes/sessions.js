@@ -16,8 +16,11 @@ router.post('/', async (req, res) => {
 
   const { group_id, title, description, start_time, end_time, session_type = 'in_person', location, topics } = req.body
 
-  if (!group_id || !title?.trim() || !start_time) {
-    return res.status(400).json({ error: 'group_id, title, and start_time are required' })
+  if (!group_id || !title?.trim() || !start_time || !end_time) {
+    return res.status(400).json({ error: 'group_id, title, start_time, and end_time are required' })
+  }
+  if (new Date(end_time) <= new Date(start_time)) {
+    return res.status(400).json({ error: 'end_time must be after start_time' })
   }
   if (!['in_person', 'hybrid', 'online'].includes(session_type)) {
     return res.status(400).json({ error: 'Invalid session_type' })
@@ -50,7 +53,7 @@ router.post('/', async (req, res) => {
       title: title.trim(),
       description: description?.trim() || null,
       start_time,
-      end_time: end_time || null,
+      end_time,
       session_type,
       is_virtual: session_type === 'online' || session_type === 'hybrid',
       location: session_type !== 'online' ? (location?.trim() || null) : null,

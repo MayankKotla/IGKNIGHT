@@ -141,7 +141,6 @@ export default function ScheduleSessionModal({ groupId = null, onClose, onCreate
     startHour: '9',
     startMinute: '00',
     startAmpm: 'AM',
-    hasEndTime: false,
     endHour: '10',
     endMinute: '00',
     endAmpm: 'AM',
@@ -196,11 +195,9 @@ export default function ScheduleSessionModal({ groupId = null, onClose, onCreate
     }
 
     const startISO = toISO(form.selectedDate, form.startHour, form.startMinute, form.startAmpm)
-    const endISO = form.hasEndTime
-      ? toISO(form.selectedDate, form.endHour, form.endMinute, form.endAmpm)
-      : null
+    const endISO = toISO(form.selectedDate, form.endHour, form.endMinute, form.endAmpm)
 
-    if (endISO && endISO <= startISO) return setError('End time must be after start time.')
+    if (endISO <= startISO) return setError('End time must be after start time.')
 
     setSaving(true)
     const { data: { session: authSession } } = await supabase.auth.getSession()
@@ -506,34 +503,13 @@ export default function ScheduleSessionModal({ groupId = null, onClose, onCreate
           </div>
 
           <div>
-            {!form.hasEndTime ? (
-              <button
-                type="button"
-                onClick={() => set('hasEndTime', true)}
-                className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors duration-200"
-              >
-                <Plus className="w-3 h-3" /> Add end time
-              </button>
-            ) : (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide">End Time</label>
-                  <button
-                    type="button"
-                    onClick={() => set('hasEndTime', false)}
-                    className="text-xs text-gray-600 hover:text-gray-400 transition-colors duration-200"
-                  >
-                    Remove
-                  </button>
-                </div>
-                <TimeInputs
-                  hour={form.endHour}
-                  minute={form.endMinute}
-                  ampm={form.endAmpm}
-                  onChange={(key, val) => setTime('end', key, val)}
-                />
-              </div>
-            )}
+            <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wide">End Time *</label>
+            <TimeInputs
+              hour={form.endHour}
+              minute={form.endMinute}
+              ampm={form.endAmpm}
+              onChange={(key, val) => setTime('end', key, val)}
+            />
           </div>
 
           {error && <p className="text-red-400 text-xs">{error}</p>}

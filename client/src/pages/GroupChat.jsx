@@ -226,6 +226,24 @@ export default function GroupChat() {
     return () => { supabase.removeChannel(channel) }
   }, [groupId, isMember])
 
+  // Session creation never pushed to other members before — the Sessions
+  // tab only reflected whatever existed at page load, so a session someone
+  // else scheduled wouldn't show up until you manually refreshed.
+  useEffect(() => {
+    if (!isMember) return
+    const channel = supabase
+      .channel(`sessions:group:${groupId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sessions', filter: `group_id=eq.${groupId}` }, (payload) => {
+        setSessions((prev) =>
+          prev.find((s) => s.id === payload.new.id)
+            ? prev
+            : [...prev, payload.new].sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
+        )
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [groupId, isMember])
+
   const generateSignedUrl = async (msg) => {
     if (!msg.storage_path) return
     const { data } = await supabase.storage.from('chat-uploads').createSignedUrl(msg.storage_path, 3600)
@@ -611,11 +629,15 @@ export default function GroupChat() {
   const visibleMessages = messages.filter((m) => !blockedUserIds.has(m.user_id))
   const contextMenuMsg = contextMenu ? messages.find((m) => m.id === contextMenu.msgId) : null
   const now = new Date()
-  // A session counts as "past" once it has ENDED, not merely once it has
-  // started — otherwise an in-progress session (start_time passed, end_time
-  // still ahead) would incorrectly drop into the Past bucket.
-  const hasEnded = (s) => new Date(s.end_time || s.start_time) < now
-  const upcoming = sessions.filter((s) => !hasEnded(s))
+  // end_time is mandatory on every session (DB-enforced since migration
+  // 020), so this is a clean three-way split: hasn't started yet, in
+  // progress right now, or already ended. Previously, a session with no
+  // end_time fell straight into "Past" the instant start_time passed —
+  // there was no way to tell "in progress" from "over".
+  const hasStarted = (s) => new Date(s.start_time) <= now
+  const hasEnded = (s) => new Date(s.end_time) <= now
+  const upcoming = sessions.filter((s) => !hasStarted(s))
+  const ongoing = sessions.filter((s) => hasStarted(s) && !hasEnded(s))
   const past = sessions.filter((s) => hasEnded(s))
 
   return (
@@ -1381,6 +1403,14 @@ export default function GroupChat() {
             </div>
           ) : (
             <div className="space-y-6">
+              {ongoing.length > 0 && (
+                <section>
+                  <p className="text-xs text-red-400 uppercase tracking-widest font-medium mb-3 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" /> Ongoing
+                  </p>
+                  <div className="space-y-3">{ongoing.map((s) => <SessionCard key={s.id} session={s} groupId={groupId} live />)}</div>
+                </section>
+              )}
               {upcoming.length > 0 && (
                 <section>
                   <p className="text-xs text-gray-600 uppercase tracking-widest font-medium mb-3">Upcoming</p>
@@ -1406,7 +1436,7 @@ export default function GroupChat() {
   )
 }
 
-function SessionCard({ session, groupId }) {
+function SessionCard({ session, groupId, live = false }) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const sType = session.session_type || (session.is_virtual ? 'online' : 'in_person')
@@ -1435,7 +1465,14 @@ function SessionCard({ session, groupId }) {
             </div>
           )}
         </div>
-        <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full border ${typeBadge.cls}`}>{typeBadge.label}</span>
+        <div className="shrink-0 flex items-center gap-1.5">
+          {live && (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" /> LIVE
+            </span>
+          )}
+          <span className={`text-xs px-2 py-0.5 rounded-full border ${typeBadge.cls}`}>{typeBadge.label}</span>
+        </div>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-400">

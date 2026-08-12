@@ -1300,18 +1300,25 @@ function SessionsTab({ viewMode, onViewModeChange }) {
   const [attendees, setAttendees] = useState({})
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  // group_id -> { id, name, courses } lookup, used to enrich sessions that
+  // arrive over realtime below (the INSERT payload is a bare row with no
+  // joins, unlike the initial fetch's groups(id, name, courses(code))).
+  const groupInfoRef = useRef({})
 
   useEffect(() => {
     if (!user) return
     async function fetchSessions() {
       const { data: memberships } = await supabase
         .from('group_members')
-        .select('group_id')
+        .select('group_id, groups(id, name, courses(code))')
         .eq('user_id', user.id)
 
       if (!memberships || memberships.length === 0) { setLoading(false); return }
 
       const groupIds = memberships.map((m) => m.group_id)
+      groupInfoRef.current = Object.fromEntries(
+        memberships.filter((m) => m.groups).map((m) => [m.group_id, m.groups])
+      )
       const nowIso = new Date().toISOString()
       const { data } = await supabase
         .from('sessions')
@@ -1320,7 +1327,7 @@ function SessionsTab({ viewMode, onViewModeChange }) {
         // "Upcoming" = hasn't ended yet — includes sessions already in
         // progress (start_time passed but end_time still ahead), not just
         // ones that haven't started.
-        .or(`end_time.gte.${nowIso},and(end_time.is.null,start_time.gte.${nowIso})`)
+        .gte('end_time', nowIso)
         .order('start_time', { ascending: true })
 
       if (!data || data.length === 0) { setLoading(false); return }
@@ -1352,6 +1359,32 @@ function SessionsTab({ viewMode, onViewModeChange }) {
       [...prev, session].sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
     )
   }
+
+  // Sessions were never pushed live before — this tab only reflected
+  // whatever existed at the moment it loaded, so a session someone else
+  // scheduled in any of your groups wouldn't show up until you reloaded.
+  // RLS on the sessions table ("Group members can view sessions") already
+  // scopes realtime delivery to groups the current user belongs to.
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase
+      .channel(`dashboard:sessions:${user.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sessions' }, (payload) => {
+        const s = payload.new
+        if (new Date(s.end_time) <= new Date()) return // shouldn't happen, but don't show an already-ended session
+        const groups = groupInfoRef.current[s.group_id]
+        if (!groups) return // a group we don't know about yet — skip rather than show a card with no group name
+
+        setSessions((prev) =>
+          prev.find((x) => x.id === s.id)
+            ? prev
+            : [...prev, { ...s, groups }].sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
+        )
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [user])
 
   const sessionBuckets = {}
   for (const s of sessions) {
