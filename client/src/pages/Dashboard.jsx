@@ -1319,15 +1319,13 @@ function SessionsTab({ viewMode, onViewModeChange }) {
       groupInfoRef.current = Object.fromEntries(
         memberships.filter((m) => m.groups).map((m) => [m.group_id, m.groups])
       )
-      const nowIso = new Date().toISOString()
+      // Fetches every session, past and future — the agenda view below
+      // filters down to non-ended ones itself, but the calendar view needs
+      // past sessions too so browsing to a previous month isn't just empty.
       const { data } = await supabase
         .from('sessions')
         .select('*, groups(id, name, courses(code))')
         .in('group_id', groupIds)
-        // "Upcoming" = hasn't ended yet — includes sessions already in
-        // progress (start_time passed but end_time still ahead), not just
-        // ones that haven't started.
-        .gte('end_time', nowIso)
         .order('start_time', { ascending: true })
 
       if (!data || data.length === 0) { setLoading(false); return }
@@ -1386,8 +1384,15 @@ function SessionsTab({ viewMode, onViewModeChange }) {
     return () => { supabase.removeChannel(channel) }
   }, [user])
 
+  // The agenda/list view only ever showed upcoming sessions ("Upcoming
+  // study sessions across your groups"), so it filters the now-broader
+  // `sessions` list back down — only the calendar view (below) uses the
+  // full list, since that's the one that needs past sessions visible.
+  const now = new Date()
+  const upcomingSessions = sessions.filter((s) => new Date(s.end_time) >= now)
+
   const sessionBuckets = {}
-  for (const s of sessions) {
+  for (const s of upcomingSessions) {
     const bucket = sessionDateBucket(s.start_time)
     if (!sessionBuckets[bucket]) sessionBuckets[bucket] = []
     sessionBuckets[bucket].push(s)
@@ -1459,7 +1464,7 @@ function SessionsTab({ viewMode, onViewModeChange }) {
       ) : sessions.length === 0 ? (
         <div className="card border border-app-border rounded-2xl p-10 text-center">
           <Calendar className="w-12 h-12 text-gray-700 mx-auto mb-4" />
-          <p className="text-gray-400">No upcoming sessions.</p>
+          <p className="text-gray-400">No sessions yet.</p>
           <p className="text-gray-500 text-sm mt-1 mb-6">Schedule your first session across any of your groups.</p>
           <button
             onClick={() => setShowModal(true)}
@@ -1469,10 +1474,24 @@ function SessionsTab({ viewMode, onViewModeChange }) {
           </button>
         </div>
       ) : viewMode === 'calendar' ? (
+        // Unlike the agenda view below, the calendar gets every session
+        // (past included) so browsing to a previous month isn't empty.
         <SessionsCalendarView
           sessions={sessions}
           navigate={navigate}
         />
+      ) : upcomingSessions.length === 0 ? (
+        <div className="card border border-app-border rounded-2xl p-10 text-center">
+          <Calendar className="w-12 h-12 text-gray-700 mx-auto mb-4" />
+          <p className="text-gray-400">No upcoming sessions.</p>
+          <p className="text-gray-500 text-sm mt-1 mb-6">Schedule your next session across any of your groups.</p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 bg-ucf-gold text-black font-semibold px-4 py-2 rounded-xl text-sm hover:bg-yellow-400 transition-colors duration-200"
+          >
+            <Plus className="w-4 h-4" /> Schedule a session
+          </button>
+        </div>
       ) : (
         <div className="space-y-7">
           {SESSION_BUCKET_ORDER.filter((bucket) => sessionBuckets[bucket]?.length).map((bucket) => (
@@ -1610,13 +1629,14 @@ function SessionsCalendarView({ sessions, navigate }) {
                 <div className="space-y-1">
                   {daySessions.slice(0, 3).map((s) => {
                     const sType = s.session_type || (s.is_virtual ? 'online' : 'in_person')
+                    const isPast = new Date(s.end_time) < today
                     return (
                       <button
                         key={s.id}
                         onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`, { state: { from: 'dashboard-sessions' } })}
                         className={`w-full text-left text-[11px] leading-tight px-1.5 py-1 rounded-md truncate transition-colors duration-150 ${
                           CALENDAR_TYPE_CHIP[sType] || CALENDAR_TYPE_CHIP.in_person
-                        }`}
+                        } ${isPast ? 'opacity-50' : ''}`}
                         title={s.title}
                       >
                         <span className="font-medium">{formatSessionTime(s.start_time)}</span> {s.title}
