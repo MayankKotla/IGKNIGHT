@@ -1,6 +1,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') })
 const express = require('express')
 const cors = require('cors')
+const helmet = require('helmet')
 const Sentry = require('@sentry/node')
 
 // No-ops entirely if SENTRY_DSN isn't set (e.g. local dev) — everything
@@ -24,11 +25,35 @@ const accountRouter = require('./routes/account')
 const app = express()
 const PORT = process.env.PORT || 3001
 
+app.use(helmet({
+  // This is a pure cross-origin JSON API — the client runs on a different
+  // origin (Vercel) by design. Helmet's default Cross-Origin-Resource-Policy
+  // is 'same-origin', which would make browsers block the client's own
+  // fetch() responses even though CORS allows them.
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}))
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true,
 }))
 app.use(express.json())
+
+// Safety net: if a request never gets a response (e.g. a Supabase or
+// googleapis call hangs on a network issue that an async route handler
+// didn't catch — Express 4 doesn't catch promise rejections in async
+// handlers automatically, so an uncaught one just hangs forever), respond
+// with 503 instead of leaving the client's fetch pending indefinitely. This
+// doesn't cancel the underlying stuck call, but it stops the user-facing
+// symptom: a button stuck on "Loading…" with no way to know something's
+// wrong.
+app.use((req, res, next) => {
+  const timer = setTimeout(() => {
+    if (!res.headersSent) res.status(503).json({ error: 'Request timed out — please try again.' })
+  }, 20000)
+  res.on('finish', () => clearTimeout(timer))
+  res.on('close', () => clearTimeout(timer))
+  next()
+})
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'IgKnight API' }))
 

@@ -2,7 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 
-const LAST_UPDATED = 'August 11, 2026'
+const LAST_UPDATED = 'August 17, 2026'
 const CONTACT_EMAIL = 'mayankkotla5@gmail.com'
 
 function Section({ title, children }) {
@@ -51,7 +51,8 @@ export default function PrivacyPolicy() {
           <Section title="3. How We Use Your Information">
             <p>To operate the core features of the app: creating and joining groups, chatting, scheduling
               sessions, and generating KnightCheck quizzes. Session notes and materials you attach are sent to
-              Anthropic's Claude API specifically to generate quiz questions from them. We use crash reports only
+              Anthropic's Claude API specifically to generate quiz questions from them. Under Anthropic's
+              commercial API terms, this content is not used to train their models. We use crash reports only
               to find and fix bugs.</p>
             <p>We do not sell your data, and we do not use it for advertising.</p>
           </Section>
@@ -69,7 +70,14 @@ export default function PrivacyPolicy() {
             <p>We don't sell or rent your information to advertisers or any other third party.</p>
           </Section>
 
-          <Section title="5. Visibility Within Groups">
+          <Section title="5. Cookies & Local Storage">
+            <p>IgKnight doesn't use tracking or advertising cookies. We do use your browser's local storage to
+              remember a few preferences on your device — which groups you've read messages in, whether you've
+              muted a group's notifications, and your preferred list/calendar view. This data stays on your
+              device, isn't sent to us, and is cleared if you clear your browser's site data.</p>
+          </Section>
+
+          <Section title="6. Visibility Within Groups">
             <p>Messages and files you post in a group are visible to every other member of that group. A group's
               owner can remove members from the group and can delete the group entirely — deleting a group
               permanently removes its chat history, sessions, notes, and uploaded files.</p>
@@ -77,7 +85,7 @@ export default function PrivacyPolicy() {
               anyone else, and they aren't notified.</p>
           </Section>
 
-          <Section title="6. Data Retention & Deletion">
+          <Section title="7. Data Retention & Deletion">
             <p>We keep your data for as long as your account is active. You can delete your account at any time
               from the account menu in the app — this is self-service and takes effect immediately. Deleting your
               account permanently removes your login and profile, and deletes any groups you own (including their
@@ -85,29 +93,31 @@ export default function PrivacyPolicy() {
               you don't own remain, but are disassociated from your account.</p>
           </Section>
 
-          <Section title="7. Your Rights">
+          <Section title="8. Your Rights">
             <p>You can access or correct your account information from within the app, and delete your account
               at any time using the "Delete account" option in the account menu. For anything the app doesn't
               cover directly, contact us at the email below.</p>
           </Section>
 
-          <Section title="8. Security">
+          <Section title="9. Security">
             <p>Access to data is restricted using row-level security at the database level, and passwords are
-              hashed rather than stored in plain text. No system is perfectly secure, and we can't guarantee
-              absolute security.</p>
+              hashed rather than stored in plain text. Data is encrypted in transit (HTTPS/TLS) between your
+              device, IgKnight, and the service providers listed above. No system is perfectly secure, and we
+              can't guarantee absolute security. If we become aware of a data breach affecting your personal
+              information, we'll notify affected users by email without undue delay.</p>
           </Section>
 
-          <Section title="9. Children's Privacy">
+          <Section title="10. Children's Privacy">
             <p>IgKnight requires a valid UCF email address and is not directed at or intended for use by children
               under 13.</p>
           </Section>
 
-          <Section title="10. Changes to This Policy">
+          <Section title="11. Changes to This Policy">
             <p>We may update this policy from time to time. Continuing to use IgKnight after a change means you
               accept the updated policy.</p>
           </Section>
 
-          <Section title="11. Contact">
+          <Section title="12. Contact">
             <p>Questions about this policy? Email{' '}
               <a href={`mailto:${CONTACT_EMAIL}`} className="text-ucf-gold hover:text-yellow-400 transition-colors duration-150">
                 {CONTACT_EMAIL}

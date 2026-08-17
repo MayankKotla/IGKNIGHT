@@ -2,7 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 
-const LAST_UPDATED = 'August 11, 2026'
+const LAST_UPDATED = 'August 17, 2026'
 const CONTACT_EMAIL = 'mayankkotla5@gmail.com'
 
 function Section({ title, children }) {
@@ -32,7 +32,8 @@ export default function TermsOfService() {
 
           <Section title="2. Eligibility">
             <p>IgKnight is exclusively for UCF students and requires a valid <code className="text-gray-300">@ucf.edu</code> email
-              address to register.</p>
+              address to register. By creating an account, you represent that you're at least 18 years old, or
+              otherwise have the legal capacity to agree to these terms under the laws of your jurisdiction.</p>
           </Section>
 
           <Section title="3. Your Account">
