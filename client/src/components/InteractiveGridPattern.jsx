@@ -17,6 +17,8 @@ import { useEffect, useRef, useState } from 'react'
 //    matter how tall the content ends up being.
 // 2. Hovering a square also lights up its 8 neighbors at a lower opacity,
 //    so it reads as a soft glow rather than one hard square flipping on.
+// 3. The square count's width comes from window.innerWidth rather than the
+//    container's own box — see the comment inside the effect below.
 export default function InteractiveGridPattern({
   width = 90,
   height = 90,
@@ -31,22 +33,34 @@ export default function InteractiveGridPattern({
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const measure = () => setSize({ w: el.offsetWidth, h: el.offsetHeight })
-    measure()
 
-    // Debounced, since recomputing the square count on every intermediate
-    // frame of a resize (e.g. the sidebar's hover-expand animating the
-    // dashboard's main column width) is wasted work. This no longer needs
-    // to feel instant, though — see the svg's own width/height below for
-    // why the resize itself already looks smooth without waiting on this.
+    // Width is read from the window, not the container. The container
+    // sits inside the dashboard's main column, which visually narrows
+    // whenever the sidebar hover-expands — reacting to that (even smoothed
+    // out) still meant recomputing the square count on every sidebar
+    // hover, which read as the background "refreshing" itself each time.
+    // The sidebar only ever covers/uncovers part of a grid that's really
+    // sized to the full window, so its own hover animation never needs to
+    // touch this component at all; only genuine window resizes should.
+    const measureWidth = () => setSize((s) => ({ ...s, w: window.innerWidth }))
+    const measureHeight = () => setSize((s) => ({ ...s, h: el.offsetHeight }))
+    measureWidth()
+    measureHeight()
+
+    window.addEventListener('resize', measureWidth)
+
+    // Height still tracks the container directly (debounced), since it
+    // genuinely does need to grow with tab content — see the svg's own
+    // width/height below for why that no longer looks like a "refresh".
     let timeoutId = null
     const observer = new ResizeObserver(() => {
       if (timeoutId) clearTimeout(timeoutId)
-      timeoutId = setTimeout(measure, 300)
+      timeoutId = setTimeout(measureHeight, 300)
     })
     observer.observe(el)
 
     return () => {
+      window.removeEventListener('resize', measureWidth)
       observer.disconnect()
       if (timeoutId) clearTimeout(timeoutId)
     }
