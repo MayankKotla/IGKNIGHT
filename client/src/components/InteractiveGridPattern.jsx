@@ -59,8 +59,8 @@ export default function InteractiveGridPattern({
             if (hoveredSquare !== null) {
               const colDiff = Math.abs(col - hoveredCol)
               const rowDiff = Math.abs(row - hoveredRow)
-              if (colDiff === 0 && rowDiff === 0) fillClass = 'fill-white/10'
-              else if (colDiff <= 1 && rowDiff <= 1) fillClass = 'fill-white/5'
+              if (colDiff === 0 && rowDiff === 0) fillClass = 'fill-white/[0.05]'
+              else if (colDiff <= 1 && rowDiff <= 1) fillClass = 'fill-white/[0.02]'
             }
 
             return (
@@ -70,7 +70,7 @@ export default function InteractiveGridPattern({
                 y={y}
                 width={width}
                 height={height}
-                className={`stroke-white/5 transition-all duration-150 ease-in-out not-[&:hover]:duration-1000 ${fillClass} ${squaresClassName}`}
+                className={`stroke-white/[0.03] transition-all duration-150 ease-in-out not-[&:hover]:duration-1000 ${fillClass} ${squaresClassName}`}
                 onMouseEnter={() => setHoveredSquare(index)}
                 onMouseLeave={() => setHoveredSquare((s) => (s === index ? null : s))}
               />
