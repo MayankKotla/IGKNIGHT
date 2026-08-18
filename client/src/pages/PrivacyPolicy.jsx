@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 
 const LAST_UPDATED = 'August 17, 2026'
-const CONTACT_EMAIL = 'mayankkotla5@gmail.com'
+const CONTACT_EMAIL = 'knightstudy6@gmail.com'
 
 function Section({ title, children }) {
   return (
