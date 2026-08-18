@@ -11,7 +11,7 @@ import { normalizeForSearch } from '../lib/courseCode'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 import { useNowTick } from '../hooks/useNowTick'
 import NumberTicker from '../components/NumberTicker'
-import HyperText from '../components/HyperText'
+import TypingAnimation from '../components/TypingAnimation'
 
 const NAV = [
   { id: 'home', icon: BookOpen, label: 'Home' },
@@ -753,9 +753,9 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
         />
       )}
 
-      <HyperText as="h1" className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase" duration={1500}>
+      <TypingAnimation as="h1" className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase" duration={45}>
         {`Good to see you, ${firstName}!`}
-      </HyperText>
+      </TypingAnimation>
       <p className="text-sm text-gray-500 mb-6">Here's what's happening with your study groups.</p>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
