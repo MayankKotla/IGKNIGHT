@@ -475,13 +475,14 @@ export default function Dashboard() {
             main's own box (rather than this, its actual scrollable content)
             made it stop partway down any tab taller than ~2 screens, which
             both cut the background short and killed hover past that point
-            (there was simply no SVG there to hover). */}
-        <div className="relative min-h-full flex flex-col">
+            (there was simply no SVG there to hover). overflow-hidden here
+            (not on `main`, which still needs to scroll) clips the pattern's
+            own oversize+skew overhang to this wrapper's real bounds, so
+            that overhang doesn't add extra empty scrollable space below the
+            actual content. */}
+        <div className="relative min-h-full flex flex-col overflow-hidden">
           <InteractiveGridPattern
-            className="z-0 border-none inset-x-0 inset-y-[-40%] h-[180%] skew-y-12"
-            width={70}
-            height={70}
-            squares={[40, 60]}
+            className="z-0 inset-x-0 inset-y-[-40%] h-[180%] skew-y-12"
           />
         {(pendingQuiz || sessionReminder) && (
           <div className="relative z-10 sticky top-0 flex flex-col shrink-0">

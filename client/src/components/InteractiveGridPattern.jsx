@@ -1,64 +1,83 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // Ported from Magic UI's Interactive Grid Pattern
 // (https://magicui.design/r/interactive-grid-pattern.json), stripped of the
-// shadcn `cn()` helper to fit this plain Vite/JSX app. Renders a grid of
-// SVG squares that light up on hover — used as a subtle background behind
-// the dashboard's tab content.
+// shadcn `cn()` helper to fit this plain Vite/JSX app, and reworked beyond
+// the original in two ways:
 //
-// Extended beyond the original: hovering a square also lights up its 8
-// neighbors at a lower opacity, so the hover effect reads as a soft glow
-// rather than a single hard-edged square flipping on.
+// 1. Square count is measured off the actual rendered box (ResizeObserver)
+//    instead of being a fixed [horizontal, vertical] count. The original
+//    always draws exactly `squares` rects sized at `width`x`height` and
+//    then CSS-stretches that fixed canvas to fill whatever box it's in —
+//    fine for a section with a known height, but our container's real
+//    height varies a lot (short tab vs. a long scrollable list, skewed
+//    oversize for the diagonal tilt), so a fixed count either squishes
+//    squares tiny or stretches them huge depending on content. Measuring
+//    the box directly keeps every square the same real pixel size no
+//    matter how tall the content ends up being.
+// 2. Hovering a square also lights up its 8 neighbors at a lower opacity,
+//    so it reads as a soft glow rather than one hard square flipping on.
 export default function InteractiveGridPattern({
-  width = 40,
-  height = 40,
-  squares = [24, 24],
+  width = 90,
+  height = 90,
   className = '',
   squaresClassName = '',
   ...props
 }) {
-  const [horizontal, vertical] = squares
+  const containerRef = useRef(null)
+  const [size, setSize] = useState({ w: 0, h: 0 })
   const [hoveredSquare, setHoveredSquare] = useState(null)
 
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const measure = () => setSize({ w: el.offsetWidth, h: el.offsetHeight })
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // +1 row/column of overscan so the grid still fully covers the box's
+  // edges even when the box size isn't an exact multiple of the square size.
+  const horizontal = size.w > 0 ? Math.ceil(size.w / width) + 1 : 0
+  const vertical = size.h > 0 ? Math.ceil(size.h / height) + 1 : 0
   const hoveredCol = hoveredSquare === null ? null : hoveredSquare % horizontal
   const hoveredRow = hoveredSquare === null ? null : Math.floor(hoveredSquare / horizontal)
 
   return (
-    <svg
-      width={width * horizontal}
-      height={height * vertical}
-      viewBox={`0 0 ${width * horizontal} ${height * vertical}`}
-      preserveAspectRatio="none"
-      className={`absolute inset-0 h-full w-full border border-gray-400/30 ${className}`}
-      {...props}
-    >
-      {Array.from({ length: horizontal * vertical }).map((_, index) => {
-        const col = index % horizontal
-        const row = Math.floor(index / horizontal)
-        const x = col * width
-        const y = row * height
+    <div ref={containerRef} className={`absolute inset-0 ${className}`} {...props}>
+      {horizontal > 0 && vertical > 0 && (
+        <svg width={horizontal * width} height={vertical * height} className="border-none">
+          {Array.from({ length: horizontal * vertical }).map((_, index) => {
+            const col = index % horizontal
+            const row = Math.floor(index / horizontal)
+            const x = col * width
+            const y = row * height
 
-        let fillClass = 'fill-transparent'
-        if (hoveredSquare !== null) {
-          const colDiff = Math.abs(col - hoveredCol)
-          const rowDiff = Math.abs(row - hoveredRow)
-          if (colDiff === 0 && rowDiff === 0) fillClass = 'fill-white/10'
-          else if (colDiff <= 1 && rowDiff <= 1) fillClass = 'fill-white/5'
-        }
+            let fillClass = 'fill-transparent'
+            if (hoveredSquare !== null) {
+              const colDiff = Math.abs(col - hoveredCol)
+              const rowDiff = Math.abs(row - hoveredRow)
+              if (colDiff === 0 && rowDiff === 0) fillClass = 'fill-white/10'
+              else if (colDiff <= 1 && rowDiff <= 1) fillClass = 'fill-white/5'
+            }
 
-        return (
-          <rect
-            key={index}
-            x={x}
-            y={y}
-            width={width}
-            height={height}
-            className={`stroke-white/10 transition-all duration-150 ease-in-out not-[&:hover]:duration-1000 ${fillClass} ${squaresClassName}`}
-            onMouseEnter={() => setHoveredSquare(index)}
-            onMouseLeave={() => setHoveredSquare((s) => (s === index ? null : s))}
-          />
-        )
-      })}
-    </svg>
+            return (
+              <rect
+                key={index}
+                x={x}
+                y={y}
+                width={width}
+                height={height}
+                className={`stroke-white/5 transition-all duration-150 ease-in-out not-[&:hover]:duration-1000 ${fillClass} ${squaresClassName}`}
+                onMouseEnter={() => setHoveredSquare(index)}
+                onMouseLeave={() => setHoveredSquare((s) => (s === index ? null : s))}
+              />
+            )
+          })}
+        </svg>
+      )}
+    </div>
   )
 }
