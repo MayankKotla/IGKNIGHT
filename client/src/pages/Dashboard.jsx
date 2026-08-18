@@ -22,24 +22,18 @@ function formatProfessor(g) {
   return [g?.professor_first_name, g?.professor_last_name].filter(Boolean).join(' ')
 }
 
-// Collapses a run of adjacent messages from the same sender in the same
-// group into a single feed entry (mirrors the consecutive-message
-// grouping GroupChat.jsx already does in the chat itself). Without this,
-// someone sending several messages in a row — completely normal in a chat
-// — would flood the activity feed with near-duplicate rows instead of one
-// entry showing the latest content plus a count. `messages` must already
-// be sorted newest-first.
-function collapseActivityFeed(messages) {
-  const collapsed = []
-  for (const msg of messages) {
-    const last = collapsed[collapsed.length - 1]
-    if (last && last.group_id === msg.group_id && last.user_id === msg.user_id) {
-      last.count += 1
-    } else {
-      collapsed.push({ ...msg, count: 1 })
-    }
-  }
-  return collapsed
+// Formats the countdown shown on the Home tab's "Next Up" session
+// spotlight. `now` is passed in (from useNowTick) rather than read fresh
+// here, so the caller controls when this recomputes.
+function formatSessionCountdown(session, now) {
+  const start = new Date(session.start_time)
+  const end = new Date(session.end_time)
+  if (now >= start && now < end) return { label: 'Happening now', ongoing: true }
+  const diffMins = Math.round((start - now) / 60000)
+  if (diffMins < 60) return { label: `Starts in ${Math.max(diffMins, 1)}m`, ongoing: false }
+  const diffHrs = Math.floor(diffMins / 60)
+  if (diffHrs < 24) return { label: `Starts in ${diffHrs}h ${diffMins % 60}m`, ongoing: false }
+  return { label: `Starts in ${Math.floor(diffHrs / 24)}d`, ongoing: false }
 }
 
 function DashDivider() {
@@ -573,21 +567,19 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
   const [groups, setGroups] = useState([])
   const [groupMeta, setGroupMeta] = useState({})
   const [loading, setLoading] = useState(true)
-  // Right-rail data — a cross-group activity feed (built from the same
-  // recentMessages fetch already used for per-group previews below, so no
-  // extra query) and a KnightCheck snapshot (streak/average/sparkline),
-  // neither of which existed anywhere on Home before.
-  const [activityFeed, setActivityFeed] = useState([])
+  // Right-rail data — a KnightCheck snapshot (streak/average/sparkline) and
+  // a "Next Up" spotlight on the single soonest session across every
+  // group, neither of which existed anywhere on Home before.
   const [quizResults, setQuizResults] = useState([])
   const [quizLoading, setQuizLoading] = useState(true)
+  const [nextSession, setNextSession] = useState(null)
+  const [nextSessionLoading, setNextSessionLoading] = useState(true)
+  const nowTick = useNowTick()
   // Sender names for the group-card preview, keyed by user id. Populated by
   // fetchAll and read from the realtime handler below (a ref so the
   // handler's closure always sees the latest map without needing to
   // resubscribe every time it changes).
   const userNamesRef = useRef({})
-  // group_id -> name/course-code lookup, used to label activity feed items
-  // that arrive over realtime (the messages INSERT payload has no join).
-  const groupLabelsRef = useRef({})
   const [showModal, setShowModal] = useState(false)
   // Remembered across visits so the layout choice sticks.
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('ks:groupViewMode') || 'rows')
@@ -606,19 +598,19 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
 
       if (!memberships || memberships.length === 0) {
         setLoading(false)
+        setQuizLoading(false)
+        setNextSessionLoading(false)
         return
       }
 
       const groupIds = memberships.map((m) => m.group_id)
       const groupList = memberships.map((m) => m.groups).filter(Boolean)
       setGroups(groupList)
-      groupLabelsRef.current = Object.fromEntries(
-        groupList.map((g) => [g.id, { name: g.name, code: g.courses?.code }])
-      )
 
       const weekStart = new Date()
       weekStart.setDate(weekStart.getDate() - weekStart.getDay())
       weekStart.setHours(0, 0, 0, 0)
+      const nowIso = new Date().toISOString()
 
       const [
         { data: weekSessions },
@@ -626,29 +618,23 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
         { data: allMembers },
         { data: recentMessages },
         { data: recentQuizResults },
+        { data: upcoming },
       ] = await Promise.all([
         supabase.from('sessions').select('id').in('group_id', groupIds).gte('start_time', weekStart.toISOString()),
         supabase.from('messages').select('id, group_id, user_id, created_at').in('group_id', groupIds).neq('user_id', user.id),
         supabase.from('group_members').select('group_id, user_id, users(full_name)').in('group_id', groupIds),
         supabase.from('messages').select('id, group_id, content, user_id, created_at, file_name, file_type, storage_path, users(full_name)').in('group_id', groupIds).order('created_at', { ascending: false }).limit(50),
         supabase.from('quiz_results').select('id, score, completed_at').eq('user_id', user.id).order('completed_at', { ascending: false }).limit(12),
+        // The soonest session that hasn't ended yet — covers both "not
+        // started" and "in progress right now", same distinction
+        // GroupChat's Ongoing/Upcoming split uses.
+        supabase.from('sessions').select('*, groups(name, courses(code))').in('group_id', groupIds).gte('end_time', nowIso).order('start_time', { ascending: true }).limit(1),
       ])
 
       setQuizResults(recentQuizResults || [])
       setQuizLoading(false)
-
-      // Cross-group activity feed — same recentMessages fetch as the
-      // per-group "last message" previews below, kept chronological across
-      // groups (unlike those, which collapse to one-per-group) but with
-      // consecutive same-sender/same-group runs collapsed via
-      // collapseActivityFeed so a burst of messages from one person reads
-      // as one entry, not a wall of near-duplicates. Muted groups are left
-      // out, matching the unread-count behavior above.
-      setActivityFeed(
-        collapseActivityFeed(
-          (recentMessages || []).filter((msg) => !localStorage.getItem(`ks:muted:${msg.group_id}`))
-        ).slice(0, 8)
-      )
+      setNextSession(upcoming?.[0] || null)
+      setNextSessionLoading(false)
 
       // Per-group unread count — same lastRead/muted cutoff logic as the
       // "New Messages" stat below, just tallied per group instead of
@@ -716,19 +702,6 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
 
           const senderName = userNamesRef.current[msg.user_id] || null
           const enriched = { ...msg, users: senderName ? { full_name: senderName } : null }
-
-          if (!muted) {
-            // Same collapsing as the initial fetch: if this message is
-            // from the same sender in the same group as the current top
-            // entry, bump its count instead of adding a new row.
-            setActivityFeed((feed) => {
-              const [head, ...rest] = feed
-              if (head && head.group_id === enriched.group_id && head.user_id === enriched.user_id) {
-                return [{ ...enriched, count: head.count + 1 }, ...rest].slice(0, 8)
-              }
-              return [{ ...enriched, count: 1 }, ...feed].slice(0, 8)
-            })
-          }
 
           return {
             ...prev,
@@ -959,63 +932,71 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
         >
           <div className="flex items-center gap-2 mb-4">
             <div className="w-8 h-8 bg-ucf-gold/10 rounded-lg flex items-center justify-center">
-              <MessageSquare className="w-4 h-4 text-ucf-gold" />
+              <Clock className="w-4 h-4 text-ucf-gold" />
             </div>
-            <p className="text-sm font-semibold text-white">Recent Activity</p>
+            <p className="text-sm font-semibold text-white">Next Up</p>
           </div>
 
-          {loading ? (
-            <div className="space-y-3">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="flex items-start gap-2.5">
-                  <SkeletonCircle className="w-7 h-7 shrink-0" />
-                  <div className="flex-1 space-y-1.5 pt-0.5">
-                    <SkeletonLine className="h-3 w-full" />
-                    <SkeletonLine className="h-2.5 w-16" />
+          {nextSessionLoading ? (
+            <div className="space-y-2">
+              <SkeletonLine className="h-4 w-3/4" />
+              <SkeletonLine className="h-3 w-1/2" />
+              <SkeletonLine className="h-8 w-full mt-3" />
+            </div>
+          ) : !nextSession ? (
+            <p className="text-xs text-gray-600">No upcoming sessions. Schedule one from any group's Sessions tab.</p>
+          ) : (
+            (() => {
+              const label = nextSession.groups
+              const sType = nextSession.session_type || 'in_person'
+              const { label: countdownLabel, ongoing } = formatSessionCountdown(nextSession, nowTick)
+              const hasStarted = new Date(nextSession.start_time) <= nowTick
+
+              return (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    {ongoing && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />}
+                    <p className={`text-xs font-semibold uppercase tracking-wide ${ongoing ? 'text-red-400' : 'text-ucf-gold'}`}>
+                      {countdownLabel}
+                    </p>
+                  </div>
+                  <p className="text-sm font-semibold text-white leading-snug mb-1">{nextSession.title}</p>
+                  <p className="text-xs text-gray-500 mb-3">
+                    {label?.courses?.code || label?.name} · {new Date(nextSession.start_time).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+
+                  {(sType === 'in_person' || sType === 'hybrid') && nextSession.location && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-3">
+                      <MapPin className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                      <span className="truncate">{nextSession.location}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    {(sType === 'hybrid' || sType === 'online') && nextSession.meeting_url && (
+                      <a
+                        href={hasStarted ? nextSession.meeting_url : undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-colors duration-200 ${
+                          hasStarted
+                            ? 'bg-ucf-gold text-black hover:bg-yellow-400'
+                            : 'bg-ucf-gold/15 text-ucf-gold/50 cursor-not-allowed pointer-events-none'
+                        }`}
+                      >
+                        <Video className="w-3.5 h-3.5" /> Join
+                      </a>
+                    )}
+                    <button
+                      onClick={() => navigate(`/groups/${nextSession.group_id}/sessions/${nextSession.id}`, { state: { from: 'dashboard-home' } })}
+                      className="text-xs text-gray-400 hover:text-white font-medium transition-colors duration-150"
+                    >
+                      View details
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : activityFeed.length === 0 ? (
-            <p className="text-xs text-gray-600">Nothing yet — messages across your groups will show up here.</p>
-          ) : (
-            <motion.div className="space-y-3" initial="hidden" animate="visible" variants={dashStagger}>
-              {activityFeed.map((msg) => {
-                const label = groupLabelsRef.current[msg.group_id]
-                const senderName = msg.users?.full_name || 'Someone'
-                const preview = msg.content?.trim()
-                  ? msg.content.trim()
-                  : msg.file_name
-                    ? `sent ${msg.file_type?.startsWith('image/') ? 'a photo' : 'a file'}: ${msg.file_name}`
-                    : 'sent an attachment'
-                return (
-                  <motion.button
-                    key={msg.id}
-                    variants={dashFadeUp}
-                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                    onClick={() => navigate(`/groups/${msg.group_id}`)}
-                    className="w-full flex items-start gap-2.5 text-left group"
-                  >
-                    <div className="w-7 h-7 rounded-full bg-ucf-gold/10 flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-[10px] font-bold text-ucf-gold">{senderName.charAt(0).toUpperCase()}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-300 leading-snug">
-                        <span className="font-medium text-white group-hover:text-ucf-gold transition-colors duration-150">{senderName}</span>
-                        {' '}
-                        <span className="line-clamp-1">{preview}</span>
-                        {msg.count > 1 && (
-                          <span className="text-gray-600"> (+{msg.count - 1} more)</span>
-                        )}
-                      </p>
-                      <p className="text-[10px] text-gray-600 mt-0.5">
-                        {label?.code || label?.name || 'a group'} · {timeAgo(msg.created_at)}
-                      </p>
-                    </div>
-                  </motion.button>
-                )
-              })}
-            </motion.div>
+              )
+            })()
           )}
         </motion.div>
       </motion.aside>
