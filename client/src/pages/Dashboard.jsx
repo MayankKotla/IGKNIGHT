@@ -852,13 +852,23 @@ function ProfileTab() {
       <h1 className="text-2xl font-semibold tracking-tight text-white mb-1 uppercase">KnightCheck Stats</h1>
       <p className="text-sm text-gray-500 mb-6">Your quiz performance across all study sessions</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <motion.div
+        className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6"
+        initial="hidden"
+        animate="visible"
+        variants={dashStagger}
+      >
         {[
           { label: 'Average Score', value: avgScore === '—' ? '—' : `${avgScore}/5`, icon: Trophy },
           { label: 'Retention Streak', value: streak, icon: Flame },
           { label: 'Quizzes Taken', value: filteredResults.length, icon: Target },
         ].map(({ label, value, icon: Icon }) => (
-          <div key={label} className="card border border-app-border rounded-2xl p-6">
+          <motion.div
+            key={label}
+            variants={dashFadeUp}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="card border border-app-border rounded-2xl p-6"
+          >
             <div className="mb-4">
               <div className="w-9 h-9 bg-ucf-gold/10 rounded-xl flex items-center justify-center">
                 <Icon className="w-4 h-4 text-ucf-gold" />
@@ -870,9 +880,9 @@ function ProfileTab() {
               <p className="text-3xl font-bold tracking-tight text-white">{value}</p>
             )}
             <p className="text-xs text-gray-600 mt-2 uppercase tracking-widest font-medium">{label}</p>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
       {!loading && filteredResults.length > 0 && <ScoreSparkline results={filteredResults} />}
 
@@ -932,7 +942,7 @@ function ProfileTab() {
           <p className="text-gray-600 text-xs mt-1">Complete a KnightCheck after a study session to see your stats here.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <motion.div className="space-y-2" initial="hidden" animate="visible" variants={dashStagger}>
           {filteredResults.map((r) => {
             const quiz = r.quizzes
             const session = quiz?.sessions
@@ -943,8 +953,10 @@ function ProfileTab() {
             const extraTopics = topics.length - visibleTopics.length
 
             return (
-              <div
+              <motion.div
                 key={r.id}
+                variants={dashFadeUp}
+                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                 onClick={() => navigate(`/quiz/${r.quiz_id}`)}
                 className="card border border-app-border rounded-2xl p-4 flex items-center gap-4 hover:border-ucf-gold/30 cursor-pointer transition-colors duration-200"
               >
@@ -970,10 +982,10 @@ function ProfileTab() {
                 <div className="shrink-0 text-right">
                   <p className="text-xs text-gray-400 font-medium">{timeAgo(r.completed_at)}</p>
                 </div>
-              </div>
+              </motion.div>
             )
           })}
-        </div>
+        </motion.div>
       )}
     </div>
   )
@@ -1193,17 +1205,18 @@ function DiscoveryTab() {
               : `No groups found for "${normalizedQuery}"`}
           </p>
           {filtered.length > 0 ? (
-            <div className="space-y-2">
+            <motion.div className="space-y-2" initial="hidden" animate="visible" variants={dashStagger}>
               {filtered.map((g) => (
-                <GroupDiscoveryCard
-                  key={g.id}
-                  group={g}
-                  isJoined={myGroupIds.has(g.id)}
-                  isJoining={joiningId === g.id}
-                  onJoin={handleJoin}
-                />
+                <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+                  <GroupDiscoveryCard
+                    group={g}
+                    isJoined={myGroupIds.has(g.id)}
+                    isJoining={joiningId === g.id}
+                    onJoin={handleJoin}
+                  />
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           ) : (
             <div className="card border border-app-border rounded-2xl p-10 text-center">
               <Search className="w-10 h-10 text-gray-700 mx-auto mb-3" />
@@ -1220,17 +1233,18 @@ function DiscoveryTab() {
         </div>
       ) : (
         <div>
-          <div className="space-y-2">
+          <motion.div className="space-y-2" initial="hidden" animate="visible" variants={dashStagger}>
             {recent.map((g) => (
-              <GroupDiscoveryCard
-                key={g.id}
-                group={g}
-                isJoined={myGroupIds.has(g.id)}
-                isJoining={joiningId === g.id}
-                onJoin={handleJoin}
-              />
+              <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+                <GroupDiscoveryCard
+                  group={g}
+                  isJoined={myGroupIds.has(g.id)}
+                  isJoining={joiningId === g.id}
+                  onJoin={handleJoin}
+                />
+              </motion.div>
             ))}
-          </div>
+          </motion.div>
 
           {rest.length > 0 && (
             <div className="mt-3">
@@ -1242,17 +1256,18 @@ function DiscoveryTab() {
                 {showAll ? 'Show less' : `See ${rest.length} more group${rest.length !== 1 ? 's' : ''}`}
               </button>
               {showAll && (
-                <div className="space-y-2 mt-2">
+                <motion.div className="space-y-2 mt-2" initial="hidden" animate="visible" variants={dashStagger}>
                   {rest.map((g) => (
-                    <GroupDiscoveryCard
-                      key={g.id}
-                      group={g}
-                      isJoined={myGroupIds.has(g.id)}
-                      isJoining={joiningId === g.id}
-                      onJoin={handleJoin}
-                    />
+                    <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+                      <GroupDiscoveryCard
+                        group={g}
+                        isJoined={myGroupIds.has(g.id)}
+                        isJoining={joiningId === g.id}
+                        onJoin={handleJoin}
+                      />
+                    </motion.div>
                   ))}
-                </div>
+                </motion.div>
               )}
             </div>
           )}
@@ -1505,19 +1520,20 @@ function SessionsTab({ viewMode, onViewModeChange }) {
                 <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold shrink-0">{bucket}</p>
                 <div className="flex-1 h-px bg-app-border" />
               </div>
-              <div className="space-y-3">
+              <motion.div className="space-y-3" initial="hidden" animate="visible" variants={dashStagger}>
                 {sessionBuckets[bucket].map((s) => (
-                  <DashboardSessionCard
-                    key={s.id}
-                    session={s}
-                    count={(attendees[s.id] || []).length}
-                    isAttending={(attendees[s.id] || []).includes(user.id)}
-                    userId={user.id}
-                    showFullDate={bucket === 'This Week' || bucket === 'Later'}
-                    onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`, { state: { from: 'dashboard-sessions' } })}
-                  />
+                  <motion.div key={s.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+                    <DashboardSessionCard
+                      session={s}
+                      count={(attendees[s.id] || []).length}
+                      isAttending={(attendees[s.id] || []).includes(user.id)}
+                      userId={user.id}
+                      showFullDate={bucket === 'This Week' || bucket === 'Later'}
+                      onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`, { state: { from: 'dashboard-sessions' } })}
+                    />
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             </section>
           ))}
         </div>
