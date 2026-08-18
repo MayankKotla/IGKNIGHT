@@ -470,11 +470,12 @@ export default function Dashboard() {
       {/* Main */}
       <main className="flex-1 overflow-y-auto flex flex-col relative">
         <InteractiveGridPattern
-          className="-z-10 border-none [mask-image:radial-gradient(ellipse_at_top,white,transparent_90%)]"
+          className="z-0 border-none"
+          squaresClassName="stroke-white/25"
           squares={[40, 40]}
         />
         {(pendingQuiz || sessionReminder) && (
-          <div className="sticky top-0 z-10 flex flex-col shrink-0">
+          <div className="relative z-10 sticky top-0 flex flex-col shrink-0">
             {pendingQuiz && (
               <div className="relative border-b border-ucf-gold/25 bg-app-surface">
                 <div className="absolute inset-0 bg-ucf-gold/10 pointer-events-none" />
@@ -541,7 +542,7 @@ export default function Dashboard() {
           </div>
         )}
         <div
-          className={`flex-1 w-full mx-auto px-8 py-10 transition-[max-width] duration-200 ${
+          className={`relative z-10 flex-1 w-full mx-auto px-8 py-10 transition-[max-width] duration-200 ${
             activeTab === 'sessions' && sessionsViewMode === 'calendar'
               ? 'max-w-[1400px]'
               : activeTab === 'home'

@@ -20,6 +20,8 @@ export default function InteractiveGridPattern({
     <svg
       width={width * horizontal}
       height={height * vertical}
+      viewBox={`0 0 ${width * horizontal} ${height * vertical}`}
+      preserveAspectRatio="none"
       className={`absolute inset-0 h-full w-full border border-gray-400/30 ${className}`}
       {...props}
     >
