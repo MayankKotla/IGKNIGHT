@@ -10,6 +10,7 @@ import EditNameModal from '../components/EditNameModal'
 import { normalizeForSearch } from '../lib/courseCode'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
 import { useNowTick } from '../hooks/useNowTick'
+import NumberTicker from '../components/NumberTicker'
 
 const NAV = [
   { id: 'home', icon: BookOpen, label: 'Home' },
@@ -776,7 +777,9 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
                 <Icon className="w-4 h-4 text-ucf-gold" />
               </div>
             </div>
-            <p className="text-4xl font-bold tracking-tight text-white">{value}</p>
+            <p className="text-4xl font-bold tracking-tight text-white">
+              <NumberTicker value={value} />
+            </p>
             <p className="text-xs text-gray-600 mt-2 uppercase tracking-widest font-medium">{label}</p>
           </motion.div>
         ))}
@@ -1063,10 +1066,10 @@ function ProfileTab() {
         variants={dashStagger}
       >
         {[
-          { label: 'Average Score', value: avgScore === '—' ? '—' : `${avgScore}/5`, icon: Trophy },
+          { label: 'Average Score', value: filteredResults.length > 0 ? Number(avgScore) : null, decimalPlaces: 1, suffix: '/5', icon: Trophy },
           { label: 'Retention Streak', value: streak, icon: Flame },
           { label: 'Quizzes Taken', value: filteredResults.length, icon: Target },
-        ].map(({ label, value, icon: Icon }) => (
+        ].map(({ label, value, decimalPlaces, suffix, icon: Icon }) => (
           <motion.div
             key={label}
             variants={dashFadeUp}
@@ -1081,7 +1084,14 @@ function ProfileTab() {
             {loading ? (
               <SkeletonLine className="h-7 w-14 mb-2" />
             ) : (
-              <p className="text-3xl font-bold tracking-tight text-white">{value}</p>
+              <p className="text-3xl font-bold tracking-tight text-white">
+                {value === null ? '—' : (
+                  <>
+                    <NumberTicker value={value} decimalPlaces={decimalPlaces || 0} />
+                    {suffix}
+                  </>
+                )}
+              </p>
             )}
             <p className="text-xs text-gray-600 mt-2 uppercase tracking-widest font-medium">{label}</p>
           </motion.div>
