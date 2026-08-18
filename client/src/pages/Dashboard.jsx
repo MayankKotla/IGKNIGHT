@@ -22,6 +22,26 @@ function formatProfessor(g) {
   return [g?.professor_first_name, g?.professor_last_name].filter(Boolean).join(' ')
 }
 
+// Collapses a run of adjacent messages from the same sender in the same
+// group into a single feed entry (mirrors the consecutive-message
+// grouping GroupChat.jsx already does in the chat itself). Without this,
+// someone sending several messages in a row — completely normal in a chat
+// — would flood the activity feed with near-duplicate rows instead of one
+// entry showing the latest content plus a count. `messages` must already
+// be sorted newest-first.
+function collapseActivityFeed(messages) {
+  const collapsed = []
+  for (const msg of messages) {
+    const last = collapsed[collapsed.length - 1]
+    if (last && last.group_id === msg.group_id && last.user_id === msg.user_id) {
+      last.count += 1
+    } else {
+      collapsed.push({ ...msg, count: 1 })
+    }
+  }
+  return collapsed
+}
+
 function DashDivider() {
   return (
     <div
@@ -618,15 +638,16 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
       setQuizLoading(false)
 
       // Cross-group activity feed — same recentMessages fetch as the
-      // per-group "last message" previews below, just kept in full
-      // (chronological, across groups) instead of collapsed to one per
-      // group. Muted groups are left out, matching the unread-count
-      // behavior above, since a feed item for a group you've muted would
-      // be a mixed signal.
+      // per-group "last message" previews below, kept chronological across
+      // groups (unlike those, which collapse to one-per-group) but with
+      // consecutive same-sender/same-group runs collapsed via
+      // collapseActivityFeed so a burst of messages from one person reads
+      // as one entry, not a wall of near-duplicates. Muted groups are left
+      // out, matching the unread-count behavior above.
       setActivityFeed(
-        (recentMessages || [])
-          .filter((msg) => !localStorage.getItem(`ks:muted:${msg.group_id}`))
-          .slice(0, 8)
+        collapseActivityFeed(
+          (recentMessages || []).filter((msg) => !localStorage.getItem(`ks:muted:${msg.group_id}`))
+        ).slice(0, 8)
       )
 
       // Per-group unread count — same lastRead/muted cutoff logic as the
@@ -697,7 +718,16 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
           const enriched = { ...msg, users: senderName ? { full_name: senderName } : null }
 
           if (!muted) {
-            setActivityFeed((feed) => [enriched, ...feed].slice(0, 8))
+            // Same collapsing as the initial fetch: if this message is
+            // from the same sender in the same group as the current top
+            // entry, bump its count instead of adding a new row.
+            setActivityFeed((feed) => {
+              const [head, ...rest] = feed
+              if (head && head.group_id === enriched.group_id && head.user_id === enriched.user_id) {
+                return [{ ...enriched, count: head.count + 1 }, ...rest].slice(0, 8)
+              }
+              return [{ ...enriched, count: 1 }, ...feed].slice(0, 8)
+            })
           }
 
           return {
@@ -974,6 +1004,9 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
                         <span className="font-medium text-white group-hover:text-ucf-gold transition-colors duration-150">{senderName}</span>
                         {' '}
                         <span className="line-clamp-1">{preview}</span>
+                        {msg.count > 1 && (
+                          <span className="text-gray-600"> (+{msg.count - 1} more)</span>
+                        )}
                       </p>
                       <p className="text-[10px] text-gray-600 mt-0.5">
                         {label?.code || label?.name || 'a group'} · {timeAgo(msg.created_at)}
