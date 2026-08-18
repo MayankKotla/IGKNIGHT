@@ -11,7 +11,6 @@ import {
 } from 'framer-motion'
 import { BookOpen, Users, Target, Calendar, MessageSquare, Shield, ArrowRight, ChevronRight, ChevronDown } from 'lucide-react'
 import Navbar from '../components/Navbar'
-import KineticText from '../components/KineticText'
 
 const features = [
   {
@@ -580,11 +579,8 @@ function ExtrudedHeadline() {
             }}
             className="text-6xl sm:text-8xl font-extrabold leading-tight"
           >
-            {isFront ? <KineticText text="Study smarter." /> : 'Study smarter.'}
-            <br />
-            <span style={{ color: isFront ? '#FFC904' : edgeColor }}>
-              {isFront ? <KineticText text="Ace it together." /> : 'Ace it together.'}
-            </span>
+            Study smarter.<br />
+            <span style={{ color: isFront ? '#FFC904' : edgeColor }}>Ace it together.</span>
           </h1>
         )
       })}
