@@ -34,16 +34,15 @@ export default function InteractiveGridPattern({
     const measure = () => setSize({ w: el.offsetWidth, h: el.offsetHeight })
     measure()
 
-    // Debounced: the sidebar's hover-expand animates the dashboard's main
-    // column width over ~200ms, which fires a burst of resize events on
-    // every intermediate frame. Recomputing the grid (which adds/removes
-    // whole squares) on each of those made hovering near the sidebar look
-    // like the background was stuttering/re-rendering mid-transition.
-    // Waiting for the resize to settle before redrawing fixes that.
+    // Debounced, since recomputing the square count on every intermediate
+    // frame of a resize (e.g. the sidebar's hover-expand animating the
+    // dashboard's main column width) is wasted work. This no longer needs
+    // to feel instant, though — see the svg's own width/height below for
+    // why the resize itself already looks smooth without waiting on this.
     let timeoutId = null
     const observer = new ResizeObserver(() => {
       if (timeoutId) clearTimeout(timeoutId)
-      timeoutId = setTimeout(measure, 200)
+      timeoutId = setTimeout(measure, 300)
     })
     observer.observe(el)
 
@@ -63,7 +62,24 @@ export default function InteractiveGridPattern({
   return (
     <div ref={containerRef} className={`absolute inset-0 ${className}`} {...props}>
       {horizontal > 0 && vertical > 0 && (
-        <svg width={horizontal * width} height={vertical * height} className="border-none">
+        // width/height set the coordinate system (so square x/y/width/height
+        // below stay in real pixel units), but the rendered box is stretched
+        // to 100% of the container via CSS (viewBox + preserveAspectRatio
+        // + w-full/h-full) rather than pinned to those pixel dimensions.
+        // That means when the container resizes — most commonly the
+        // sidebar's hover-expand animating main's width — the browser
+        // stretches the existing grid smoothly on every frame for free, no
+        // React re-render involved. The debounced ResizeObserver above only
+        // needs to catch up afterwards to fix the square *count* (so they
+        // settle back to their real size instead of staying stretched),
+        // and by then nothing is animating, so that correction is unnoticeable.
+        <svg
+          width={horizontal * width}
+          height={vertical * height}
+          viewBox={`0 0 ${horizontal * width} ${vertical * height}`}
+          preserveAspectRatio="none"
+          className="absolute inset-0 h-full w-full border-none"
+        >
           {Array.from({ length: horizontal * vertical }).map((_, index) => {
             const col = index % horizontal
             const row = Math.floor(index / horizontal)
