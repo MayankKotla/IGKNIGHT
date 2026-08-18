@@ -468,11 +468,13 @@ export default function Dashboard() {
       )}
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto flex flex-col relative">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col relative">
         <InteractiveGridPattern
-          className="z-0 border-none"
-          squaresClassName="stroke-white/25"
-          squares={[40, 40]}
+          className="z-0 border-none inset-x-0 inset-y-[-30%] h-[200%] skew-y-12"
+          squaresClassName="stroke-white/20"
+          width={80}
+          height={80}
+          squares={[30, 30]}
         />
         {(pendingQuiz || sessionReminder) && (
           <div className="relative z-10 sticky top-0 flex flex-col shrink-0">
