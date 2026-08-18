@@ -12,6 +12,7 @@ import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skele
 import { useNowTick } from '../hooks/useNowTick'
 import NumberTicker from '../components/NumberTicker'
 import TypingAnimation from '../components/TypingAnimation'
+import InteractiveGridPattern from '../components/InteractiveGridPattern'
 
 const NAV = [
   { id: 'home', icon: BookOpen, label: 'Home' },
@@ -467,7 +468,11 @@ export default function Dashboard() {
       )}
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto flex flex-col">
+      <main className="flex-1 overflow-y-auto flex flex-col relative">
+        <InteractiveGridPattern
+          className="-z-10 opacity-[0.15] [mask-image:radial-gradient(ellipse_at_top,white,transparent_75%)]"
+          squares={[40, 40]}
+        />
         {(pendingQuiz || sessionReminder) && (
           <div className="sticky top-0 z-10 flex flex-col shrink-0">
             {pendingQuiz && (
