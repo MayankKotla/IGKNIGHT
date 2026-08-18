@@ -33,8 +33,8 @@ export default function InteractiveGridPattern({
             y={y}
             width={width}
             height={height}
-            className={`stroke-gray-400/30 transition-all duration-100 ease-in-out not-[&:hover]:duration-1000 ${
-              hoveredSquare === index ? 'fill-gray-300/30' : 'fill-transparent'
+            className={`stroke-gray-400/50 transition-all duration-100 ease-in-out not-[&:hover]:duration-1000 ${
+              hoveredSquare === index ? 'fill-gray-300/40' : 'fill-transparent'
             } ${squaresClassName}`}
             onMouseEnter={() => setHoveredSquare(index)}
             onMouseLeave={() => setHoveredSquare(null)}

@@ -470,7 +470,7 @@ export default function Dashboard() {
       {/* Main */}
       <main className="flex-1 overflow-y-auto flex flex-col relative">
         <InteractiveGridPattern
-          className="-z-10 opacity-[0.15] [mask-image:radial-gradient(ellipse_at_top,white,transparent_75%)]"
+          className="-z-10 border-none [mask-image:radial-gradient(ellipse_at_top,white,transparent_90%)]"
           squares={[40, 40]}
         />
         {(pendingQuiz || sessionReminder) && (
