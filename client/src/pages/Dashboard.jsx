@@ -587,12 +587,12 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
   const [groupMeta, setGroupMeta] = useState({})
   const [loading, setLoading] = useState(true)
   // Right-rail data — a KnightCheck snapshot (streak/average/sparkline) and
-  // a "Next Up" spotlight on the single soonest session across every
+  // a "Next Up" spotlight on the up-to-5 soonest sessions across every
   // group, neither of which existed anywhere on Home before.
   const [quizResults, setQuizResults] = useState([])
   const [quizLoading, setQuizLoading] = useState(true)
-  const [nextSession, setNextSession] = useState(null)
-  const [nextSessionLoading, setNextSessionLoading] = useState(true)
+  const [upcomingSessions, setUpcomingSessions] = useState([])
+  const [upcomingSessionsLoading, setUpcomingSessionsLoading] = useState(true)
   const nowTick = useNowTick()
   // Sender names for the group-card preview, keyed by user id. Populated by
   // fetchAll and read from the realtime handler below (a ref so the
@@ -618,7 +618,7 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
       if (!memberships || memberships.length === 0) {
         setLoading(false)
         setQuizLoading(false)
-        setNextSessionLoading(false)
+        setUpcomingSessionsLoading(false)
         return
       }
 
@@ -644,16 +644,16 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
         supabase.from('group_members').select('group_id, user_id, users(full_name)').in('group_id', groupIds),
         supabase.from('messages').select('id, group_id, content, user_id, created_at, file_name, file_type, storage_path, users(full_name)').in('group_id', groupIds).order('created_at', { ascending: false }).limit(50),
         supabase.from('quiz_results').select('id, score, completed_at').eq('user_id', user.id).order('completed_at', { ascending: false }).limit(12),
-        // The soonest session that hasn't ended yet — covers both "not
-        // started" and "in progress right now", same distinction
+        // The up-to-5 soonest sessions that haven't ended yet — covers both
+        // "not started" and "in progress right now", same distinction
         // GroupChat's Ongoing/Upcoming split uses.
-        supabase.from('sessions').select('*, groups(name, courses(code))').in('group_id', groupIds).gte('end_time', nowIso).order('start_time', { ascending: true }).limit(1),
+        supabase.from('sessions').select('*, groups(name, courses(code))').in('group_id', groupIds).gte('end_time', nowIso).order('start_time', { ascending: true }).limit(5),
       ])
 
       setQuizResults(recentQuizResults || [])
       setQuizLoading(false)
-      setNextSession(upcoming?.[0] || null)
-      setNextSessionLoading(false)
+      setUpcomingSessions(upcoming || [])
+      setUpcomingSessionsLoading(false)
 
       // Per-group unread count — same lastRead/muted cutoff logic as the
       // "New Messages" stat below, just tallied per group instead of
@@ -960,66 +960,78 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
             <p className="text-sm font-semibold text-white">Next Up</p>
           </div>
 
-          {nextSessionLoading ? (
+          {upcomingSessionsLoading ? (
             <div className="space-y-2">
               <SkeletonLine className="h-4 w-3/4" />
               <SkeletonLine className="h-3 w-1/2" />
               <SkeletonLine className="h-8 w-full mt-3" />
             </div>
-          ) : !nextSession ? (
+          ) : upcomingSessions.length === 0 ? (
             <p className="text-xs text-gray-600">No upcoming sessions. Schedule one from any group's Sessions tab.</p>
           ) : (
-            (() => {
-              const label = nextSession.groups
-              const sType = nextSession.session_type || 'in_person'
-              const { label: countdownLabel, ongoing } = formatSessionCountdown(nextSession, nowTick)
-              const hasStarted = new Date(nextSession.start_time) <= nowTick
+            <motion.div className="space-y-4" initial="hidden" animate="visible" variants={dashStagger}>
+              {upcomingSessions.map((session, i) => {
+                const label = session.groups
+                const sType = session.session_type || 'in_person'
+                const { label: countdownLabel, ongoing } = formatSessionCountdown(session, nowTick)
+                const hasStarted = new Date(session.start_time) <= nowTick
 
-              return (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    {ongoing && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />}
-                    <p className={`text-xs font-semibold uppercase tracking-wide ${ongoing ? 'text-red-400' : 'text-ucf-gold'}`}>
-                      {countdownLabel}
-                    </p>
-                  </div>
-                  <p className="text-sm font-semibold text-white leading-snug mb-1">{nextSession.title}</p>
-                  <p className="text-xs text-gray-500 mb-3">
-                    {label?.courses?.code || label?.name} · {new Date(nextSession.start_time).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </p>
-
-                  {(sType === 'in_person' || sType === 'hybrid') && nextSession.location && (
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-3">
-                      <MapPin className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                      <span className="truncate">{nextSession.location}</span>
+                return (
+                  <motion.div
+                    key={session.id}
+                    variants={dashFadeUp}
+                    transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                    className={i < upcomingSessions.length - 1 ? 'pb-4 border-b border-app-border' : ''}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      {ongoing && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />}
+                      <p className={`text-[11px] font-semibold uppercase tracking-wide ${ongoing ? 'text-red-400' : 'text-ucf-gold'}`}>
+                        {countdownLabel}
+                      </p>
                     </div>
-                  )}
 
-                  <div className="flex items-center gap-2">
-                    {(sType === 'hybrid' || sType === 'online') && nextSession.meeting_url && (
-                      <a
-                        href={hasStarted ? nextSession.meeting_url : undefined}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-colors duration-200 ${
-                          hasStarted
-                            ? 'bg-ucf-gold text-black hover:bg-yellow-400'
-                            : 'bg-ucf-gold/15 text-ucf-gold/50 cursor-not-allowed pointer-events-none'
-                        }`}
-                      >
-                        <Video className="w-3.5 h-3.5" /> Join
-                      </a>
-                    )}
-                    <button
-                      onClick={() => navigate(`/groups/${nextSession.group_id}/sessions/${nextSession.id}`, { state: { from: 'dashboard-home' } })}
-                      className="text-xs text-gray-400 hover:text-white font-medium transition-colors duration-150"
-                    >
-                      View details
-                    </button>
-                  </div>
-                </div>
-              )
-            })()
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-white leading-snug truncate">{session.title}</p>
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">
+                          {label?.courses?.code || label?.name} · {new Date(session.start_time).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        {(sType === 'in_person' || sType === 'hybrid') && session.location && (
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-1">
+                            <MapPin className="w-3 h-3 text-gray-600 shrink-0" />
+                            <span className="truncate">{session.location}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {(sType === 'hybrid' || sType === 'online') && session.meeting_url && (
+                          <a
+                            href={hasStarted ? session.meeting_url : undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="Join meeting"
+                            className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors duration-200 ${
+                              hasStarted
+                                ? 'bg-ucf-gold text-black hover:bg-yellow-400'
+                                : 'bg-ucf-gold/15 text-ucf-gold/50 cursor-not-allowed pointer-events-none'
+                            }`}
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                        <button
+                          onClick={() => navigate(`/groups/${session.group_id}/sessions/${session.id}`, { state: { from: 'dashboard-home' } })}
+                          className="text-xs text-gray-400 hover:text-white font-medium transition-colors duration-150"
+                        >
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )
+              })}
+            </motion.div>
           )}
         </motion.div>
       </motion.aside>
