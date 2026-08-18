@@ -1652,14 +1652,23 @@ function SessionsTab({ viewMode, onViewModeChange }) {
     return () => { supabase.removeChannel(channel) }
   }, [user])
 
-  // The agenda/list view only ever showed upcoming sessions ("Upcoming
+  // The agenda/list view only ever showed non-ended sessions ("Upcoming
   // study sessions across your groups"), so it filters the now-broader
   // `sessions` list back down — only the calendar view (below) uses the
   // full list, since that's the one that needs past sessions visible.
-  const upcomingSessions = sessions.filter((s) => new Date(s.end_time) >= now)
+  // Within that, sessions currently in progress get pulled into their own
+  // "Ongoing" section (matching GroupChat's own Ongoing/Upcoming/Past
+  // split) instead of being silently mixed into "Today" alongside sessions
+  // that haven't started yet — there was previously no way to tell "this
+  // is happening right now" from "this is later today" at a glance here.
+  const hasStarted = (s) => new Date(s.start_time) <= now
+  const hasEnded = (s) => new Date(s.end_time) <= now
+  const notEndedSessions = sessions.filter((s) => !hasEnded(s))
+  const ongoingSessions = notEndedSessions.filter((s) => hasStarted(s))
+  const notYetStartedSessions = notEndedSessions.filter((s) => !hasStarted(s))
 
   const sessionBuckets = {}
-  for (const s of upcomingSessions) {
+  for (const s of notYetStartedSessions) {
     const bucket = sessionDateBucket(s.start_time)
     if (!sessionBuckets[bucket]) sessionBuckets[bucket] = []
     sessionBuckets[bucket].push(s)
@@ -1747,7 +1756,7 @@ function SessionsTab({ viewMode, onViewModeChange }) {
           sessions={sessions}
           navigate={navigate}
         />
-      ) : upcomingSessions.length === 0 ? (
+      ) : notEndedSessions.length === 0 ? (
         <div className="card border border-app-border rounded-2xl p-10 text-center">
           <Calendar className="w-12 h-12 text-gray-700 mx-auto mb-4" />
           <p className="text-gray-400">No upcoming sessions.</p>
@@ -1761,6 +1770,31 @@ function SessionsTab({ viewMode, onViewModeChange }) {
         </div>
       ) : (
         <div className="space-y-7">
+          {ongoingSessions.length > 0 && (
+            <section>
+              <div className="flex items-center gap-3 mb-3">
+                <p className="text-xs text-red-400 uppercase tracking-widest font-semibold shrink-0 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" /> Ongoing
+                </p>
+                <div className="flex-1 h-px bg-app-border" />
+              </div>
+              <motion.div className="space-y-3" initial="hidden" animate="visible" variants={dashStagger}>
+                {ongoingSessions.map((s) => (
+                  <motion.div key={s.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+                    <DashboardSessionCard
+                      session={s}
+                      count={(attendees[s.id] || []).length}
+                      isAttending={(attendees[s.id] || []).includes(user.id)}
+                      userId={user.id}
+                      showFullDate={false}
+                      live
+                      onClick={() => navigate(`/groups/${s.groups?.id}/sessions/${s.id}`, { state: { from: 'dashboard-sessions' } })}
+                    />
+                  </motion.div>
+                ))}
+              </motion.div>
+            </section>
+          )}
           {SESSION_BUCKET_ORDER.filter((bucket) => sessionBuckets[bucket]?.length).map((bucket) => (
             <section key={bucket}>
               <div className="flex items-center gap-3 mb-3">
@@ -1936,7 +1970,7 @@ function SessionsCalendarView({ sessions, navigate }) {
   )
 }
 
-function DashboardSessionCard({ session: s, count, isAttending, userId, showFullDate, onClick }) {
+function DashboardSessionCard({ session: s, count, isAttending, userId, showFullDate, live = false, onClick }) {
   const sType = s.session_type || (s.is_virtual ? 'online' : 'in_person')
   const isHybridHost = sType === 'hybrid' && s.created_by === userId
   const typeBadge = {
@@ -1969,6 +2003,11 @@ function DashboardSessionCard({ session: s, count, isAttending, userId, showFull
       <div className="flex-1 min-w-0 py-0.5">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="font-semibold text-white tracking-tight group-hover:text-ucf-gold transition-colors duration-200">{s.title}</p>
+          {live && (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" /> LIVE
+            </span>
+          )}
           {isAttending && (
             <span className="inline-flex items-center gap-1 text-xs bg-ucf-gold/10 text-ucf-gold border border-ucf-gold/20 px-2 py-0.5 rounded-full">
               <UserCheck className="w-3 h-3" /> Attending
