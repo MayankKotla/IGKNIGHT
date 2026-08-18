@@ -521,11 +521,21 @@ export default function Dashboard() {
         )}
         <div
           className={`flex-1 w-full mx-auto px-8 py-10 transition-[max-width] duration-200 ${
-            activeTab === 'sessions' && sessionsViewMode === 'calendar' ? 'max-w-[1400px]' : 'max-w-5xl'
+            activeTab === 'sessions' && sessionsViewMode === 'calendar'
+              ? 'max-w-[1400px]'
+              : activeTab === 'home'
+                ? 'max-w-6xl'
+                : 'max-w-5xl'
           }`}
         >
           <div key={activeTab} className="tab-enter">
-            {activeTab === 'home' && <HomeTab firstName={firstName} onGoToDiscover={() => setActiveTab('discover')} />}
+            {activeTab === 'home' && (
+              <HomeTab
+                firstName={firstName}
+                onGoToDiscover={() => setActiveTab('discover')}
+                onGoToKnightCheck={() => setActiveTab('profile')}
+              />
+            )}
             {activeTab === 'discover' && <DiscoveryTab />}
             {activeTab === 'sessions' && <SessionsTab viewMode={sessionsViewMode} onViewModeChange={setSessionsViewMode} />}
             {activeTab === 'profile' && <ProfileTab />}
@@ -536,17 +546,28 @@ export default function Dashboard() {
   )
 }
 
-function HomeTab({ firstName, onGoToDiscover }) {
+function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [stats, setStats] = useState({ groups: 0, sessionsThisWeek: 0, newMessages: 0 })
   const [groups, setGroups] = useState([])
   const [groupMeta, setGroupMeta] = useState({})
   const [loading, setLoading] = useState(true)
+  // Right-rail data — a cross-group activity feed (built from the same
+  // recentMessages fetch already used for per-group previews below, so no
+  // extra query) and a KnightCheck snapshot (streak/average/sparkline),
+  // neither of which existed anywhere on Home before.
+  const [activityFeed, setActivityFeed] = useState([])
+  const [quizResults, setQuizResults] = useState([])
+  const [quizLoading, setQuizLoading] = useState(true)
   // Sender names for the group-card preview, keyed by user id. Populated by
   // fetchAll and read from the realtime handler below (a ref so the
   // handler's closure always sees the latest map without needing to
   // resubscribe every time it changes).
   const userNamesRef = useRef({})
+  // group_id -> name/course-code lookup, used to label activity feed items
+  // that arrive over realtime (the messages INSERT payload has no join).
+  const groupLabelsRef = useRef({})
   const [showModal, setShowModal] = useState(false)
   // Remembered across visits so the layout choice sticks.
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('ks:groupViewMode') || 'rows')
@@ -569,7 +590,11 @@ function HomeTab({ firstName, onGoToDiscover }) {
       }
 
       const groupIds = memberships.map((m) => m.group_id)
-      setGroups(memberships.map((m) => m.groups).filter(Boolean))
+      const groupList = memberships.map((m) => m.groups).filter(Boolean)
+      setGroups(groupList)
+      groupLabelsRef.current = Object.fromEntries(
+        groupList.map((g) => [g.id, { name: g.name, code: g.courses?.code }])
+      )
 
       const weekStart = new Date()
       weekStart.setDate(weekStart.getDate() - weekStart.getDay())
@@ -580,12 +605,29 @@ function HomeTab({ firstName, onGoToDiscover }) {
         { data: statMessages },
         { data: allMembers },
         { data: recentMessages },
+        { data: recentQuizResults },
       ] = await Promise.all([
         supabase.from('sessions').select('id').in('group_id', groupIds).gte('start_time', weekStart.toISOString()),
         supabase.from('messages').select('id, group_id, user_id, created_at').in('group_id', groupIds).neq('user_id', user.id),
         supabase.from('group_members').select('group_id, user_id, users(full_name)').in('group_id', groupIds),
-        supabase.from('messages').select('group_id, content, user_id, created_at, file_name, file_type, storage_path, users(full_name)').in('group_id', groupIds).order('created_at', { ascending: false }).limit(50),
+        supabase.from('messages').select('id, group_id, content, user_id, created_at, file_name, file_type, storage_path, users(full_name)').in('group_id', groupIds).order('created_at', { ascending: false }).limit(50),
+        supabase.from('quiz_results').select('id, score, completed_at').eq('user_id', user.id).order('completed_at', { ascending: false }).limit(12),
       ])
+
+      setQuizResults(recentQuizResults || [])
+      setQuizLoading(false)
+
+      // Cross-group activity feed — same recentMessages fetch as the
+      // per-group "last message" previews below, just kept in full
+      // (chronological, across groups) instead of collapsed to one per
+      // group. Muted groups are left out, matching the unread-count
+      // behavior above, since a feed item for a group you've muted would
+      // be a mixed signal.
+      setActivityFeed(
+        (recentMessages || [])
+          .filter((msg) => !localStorage.getItem(`ks:muted:${msg.group_id}`))
+          .slice(0, 8)
+      )
 
       // Per-group unread count — same lastRead/muted cutoff logic as the
       // "New Messages" stat below, just tallied per group instead of
@@ -654,6 +696,10 @@ function HomeTab({ firstName, onGoToDiscover }) {
           const senderName = userNamesRef.current[msg.user_id] || null
           const enriched = { ...msg, users: senderName ? { full_name: senderName } : null }
 
+          if (!muted) {
+            setActivityFeed((feed) => [enriched, ...feed].slice(0, 8))
+          }
+
           return {
             ...prev,
             lastMessages: { ...prev.lastMessages, [msg.group_id]: enriched },
@@ -678,6 +724,17 @@ function HomeTab({ firstName, onGoToDiscover }) {
     { label: 'New Messages', value: stats.newMessages, icon: MessageSquare },
   ]
 
+  // Same streak definition as KnightCheck's own stat card: consecutive
+  // passing (>=3/5) quizzes counting back from the most recent.
+  const quizAvg = quizResults.length > 0
+    ? (quizResults.reduce((sum, r) => sum + r.score, 0) / quizResults.length).toFixed(1)
+    : null
+  let quizStreak = 0
+  for (const r of quizResults) {
+    if (r.score >= 3) quizStreak++
+    else break
+  }
+
   return (
     <div>
       {showModal && (
@@ -693,6 +750,9 @@ function HomeTab({ firstName, onGoToDiscover }) {
 
       <h1 className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase">Good to see you, {firstName}!</h1>
       <p className="text-sm text-gray-500 mb-6">Here's what's happening with your study groups.</p>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
+      <div className="min-w-0">
 
       <motion.div
         className="grid grid-cols-1 sm:grid-cols-3 gap-4"
@@ -797,6 +857,136 @@ function HomeTab({ firstName, onGoToDiscover }) {
           </button>
         </div>
       )}
+
+      </div>
+
+      <motion.aside
+        className="space-y-6 xl:sticky xl:top-10"
+        initial="hidden"
+        animate="visible"
+        variants={dashStagger}
+      >
+        <motion.div
+          variants={dashFadeUp}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="card border border-app-border rounded-2xl p-5"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-ucf-gold/10 rounded-lg flex items-center justify-center">
+                <Target className="w-4 h-4 text-ucf-gold" />
+              </div>
+              <p className="text-sm font-semibold text-white">KnightCheck</p>
+            </div>
+            <button
+              onClick={onGoToKnightCheck}
+              className="text-xs text-ucf-gold hover:text-yellow-400 font-medium transition-colors duration-150"
+            >
+              View all
+            </button>
+          </div>
+
+          {quizLoading ? (
+            <div className="space-y-2">
+              <SkeletonLine className="h-3.5 w-32" />
+              <SkeletonLine className="h-3.5 w-24" />
+            </div>
+          ) : quizResults.length === 0 ? (
+            <p className="text-xs text-gray-600">No quizzes taken yet. Complete a KnightCheck after a study session to see your stats here.</p>
+          ) : (
+            <>
+              <div className="flex items-center gap-5 mb-4">
+                <div>
+                  <p className="text-2xl font-bold tracking-tight text-white">{quizAvg}<span className="text-sm text-gray-600">/5</span></p>
+                  <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium mt-0.5">Avg Score</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Flame className={`w-4 h-4 ${quizStreak > 0 ? 'text-ucf-gold' : 'text-gray-700'}`} />
+                  <div>
+                    <p className="text-2xl font-bold tracking-tight text-white">{quizStreak}</p>
+                    <p className="text-[10px] text-gray-600 uppercase tracking-widest font-medium -mt-0.5">Streak</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-end gap-1 h-10">
+                {quizResults.slice(0, 8).slice().reverse().map((r) => (
+                  <div
+                    key={r.id}
+                    title={`${r.score}/5`}
+                    className={`flex-1 rounded-t-sm ${r.score >= 3 ? 'bg-green-500/60' : 'bg-red-500/60'}`}
+                    style={{ height: `${Math.max(15, Math.round((r.score / 5) * 100))}%` }}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </motion.div>
+
+        <motion.div
+          variants={dashFadeUp}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="card border border-app-border rounded-2xl p-5"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-ucf-gold/10 rounded-lg flex items-center justify-center">
+              <MessageSquare className="w-4 h-4 text-ucf-gold" />
+            </div>
+            <p className="text-sm font-semibold text-white">Recent Activity</p>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <SkeletonCircle className="w-7 h-7 shrink-0" />
+                  <div className="flex-1 space-y-1.5 pt-0.5">
+                    <SkeletonLine className="h-3 w-full" />
+                    <SkeletonLine className="h-2.5 w-16" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : activityFeed.length === 0 ? (
+            <p className="text-xs text-gray-600">Nothing yet — messages across your groups will show up here.</p>
+          ) : (
+            <motion.div className="space-y-3" initial="hidden" animate="visible" variants={dashStagger}>
+              {activityFeed.map((msg) => {
+                const label = groupLabelsRef.current[msg.group_id]
+                const senderName = msg.users?.full_name || 'Someone'
+                const preview = msg.content?.trim()
+                  ? msg.content.trim()
+                  : msg.file_name
+                    ? `sent ${msg.file_type?.startsWith('image/') ? 'a photo' : 'a file'}: ${msg.file_name}`
+                    : 'sent an attachment'
+                return (
+                  <motion.button
+                    key={msg.id}
+                    variants={dashFadeUp}
+                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                    onClick={() => navigate(`/groups/${msg.group_id}`)}
+                    className="w-full flex items-start gap-2.5 text-left group"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-ucf-gold/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[10px] font-bold text-ucf-gold">{senderName.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-300 leading-snug">
+                        <span className="font-medium text-white group-hover:text-ucf-gold transition-colors duration-150">{senderName}</span>
+                        {' '}
+                        <span className="line-clamp-1">{preview}</span>
+                      </p>
+                      <p className="text-[10px] text-gray-600 mt-0.5">
+                        {label?.code || label?.name || 'a group'} · {timeAgo(msg.created_at)}
+                      </p>
+                    </div>
+                  </motion.button>
+                )
+              })}
+            </motion.div>
+          )}
+        </motion.div>
+      </motion.aside>
+      </div>
     </div>
   )
 }
