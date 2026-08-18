@@ -20,21 +20,36 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Deliberately NOT using emailRedirectTo / a clickable confirmation link.
+  // Enterprise mail security (Microsoft Safe Links and similar, which UCF's
+  // Office 365 tenant runs) pre-fetches every link in an incoming email to
+  // scan it for malware before delivery. Supabase's confirmation link
+  // confirms the account the instant its URL is GET-requested — no click
+  // intent required — so that pre-fetch alone was silently confirming
+  // accounts before a human ever saw the email (confirmed by "Confirmed at"
+  // matching "Confirmation sent at" to the same second in Supabase's user
+  // table during testing). That defeats the purpose of email verification:
+  // anyone could sign up with an email they don't own and have it
+  // auto-confirmed by the scanner. A 6-digit OTP code the user has to
+  // manually read and type can't be triggered by a link-scanning bot, so
+  // Signup.jsx collects it via verifySignupOtp below instead of relying on
+  // a redirect page. The Supabase "Confirm signup" email template must be
+  // edited in the dashboard to display {{ .Token }} instead of
+  // {{ .ConfirmationURL }} for this to actually take effect.
   const signUp = ({ email, password, fullName }) =>
     supabase.auth.signUp({
       email,
       password,
       options: {
         data: { full_name: fullName },
-        // Without this, Supabase sends the confirmation link to whatever
-        // the project's default Site URL is, which isn't a page this app
-        // ever renders meaningfully. Requires this exact URL to be added
-        // to Supabase's Authentication > URL Configuration > Redirect URLs
-        // allow-list, or Supabase silently falls back to the Site URL
-        // instead.
-        emailRedirectTo: `${window.location.origin}/verify-email`,
       },
     })
+
+  const verifySignupOtp = ({ email, token }) =>
+    supabase.auth.verifyOtp({ email, token, type: 'signup' })
+
+  const resendSignupOtp = (email) =>
+    supabase.auth.resend({ type: 'signup', email })
 
   const signIn = ({ email, password }) =>
     supabase.auth.signInWithPassword({ email, password })
@@ -50,7 +65,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signUp, verifySignupOtp, resendSignupOtp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )
