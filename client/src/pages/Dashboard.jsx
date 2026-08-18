@@ -468,14 +468,21 @@ export default function Dashboard() {
       )}
 
       {/* Main */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col relative">
-        <InteractiveGridPattern
-          className="z-0 border-none inset-x-0 inset-y-[-30%] h-[200%] skew-y-12"
-          squaresClassName="stroke-white/20"
-          width={80}
-          height={80}
-          squares={[30, 30]}
-        />
+      <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
+        {/* min-h-full (not a fixed viewport height) so this wrapper — and the
+            grid pattern absolutely positioned inside it — grows to match
+            whatever the actual tab content needs. Sizing the pattern off
+            main's own box (rather than this, its actual scrollable content)
+            made it stop partway down any tab taller than ~2 screens, which
+            both cut the background short and killed hover past that point
+            (there was simply no SVG there to hover). */}
+        <div className="relative min-h-full flex flex-col">
+          <InteractiveGridPattern
+            className="z-0 border-none inset-x-0 inset-y-[-40%] h-[180%] skew-y-12"
+            width={70}
+            height={70}
+            squares={[40, 60]}
+          />
         {(pendingQuiz || sessionReminder) && (
           <div className="relative z-10 sticky top-0 flex flex-col shrink-0">
             {pendingQuiz && (
@@ -564,6 +571,7 @@ export default function Dashboard() {
             {activeTab === 'sessions' && <SessionsTab viewMode={sessionsViewMode} onViewModeChange={setSessionsViewMode} />}
             {activeTab === 'profile' && <ProfileTab />}
           </div>
+        </div>
         </div>
       </main>
     </div>

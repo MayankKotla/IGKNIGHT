@@ -5,6 +5,10 @@ import { useState } from 'react'
 // shadcn `cn()` helper to fit this plain Vite/JSX app. Renders a grid of
 // SVG squares that light up on hover — used as a subtle background behind
 // the dashboard's tab content.
+//
+// Extended beyond the original: hovering a square also lights up its 8
+// neighbors at a lower opacity, so the hover effect reads as a soft glow
+// rather than a single hard-edged square flipping on.
 export default function InteractiveGridPattern({
   width = 40,
   height = 40,
@@ -16,6 +20,9 @@ export default function InteractiveGridPattern({
   const [horizontal, vertical] = squares
   const [hoveredSquare, setHoveredSquare] = useState(null)
 
+  const hoveredCol = hoveredSquare === null ? null : hoveredSquare % horizontal
+  const hoveredRow = hoveredSquare === null ? null : Math.floor(hoveredSquare / horizontal)
+
   return (
     <svg
       width={width * horizontal}
@@ -26,8 +33,19 @@ export default function InteractiveGridPattern({
       {...props}
     >
       {Array.from({ length: horizontal * vertical }).map((_, index) => {
-        const x = (index % horizontal) * width
-        const y = Math.floor(index / horizontal) * height
+        const col = index % horizontal
+        const row = Math.floor(index / horizontal)
+        const x = col * width
+        const y = row * height
+
+        let fillClass = 'fill-transparent'
+        if (hoveredSquare !== null) {
+          const colDiff = Math.abs(col - hoveredCol)
+          const rowDiff = Math.abs(row - hoveredRow)
+          if (colDiff === 0 && rowDiff === 0) fillClass = 'fill-white/10'
+          else if (colDiff <= 1 && rowDiff <= 1) fillClass = 'fill-white/5'
+        }
+
         return (
           <rect
             key={index}
@@ -35,11 +53,9 @@ export default function InteractiveGridPattern({
             y={y}
             width={width}
             height={height}
-            className={`stroke-gray-400/50 transition-all duration-100 ease-in-out not-[&:hover]:duration-1000 ${
-              hoveredSquare === index ? 'fill-gray-300/40' : 'fill-transparent'
-            } ${squaresClassName}`}
+            className={`stroke-white/10 transition-all duration-150 ease-in-out not-[&:hover]:duration-1000 ${fillClass} ${squaresClassName}`}
             onMouseEnter={() => setHoveredSquare(index)}
-            onMouseLeave={() => setHoveredSquare(null)}
+            onMouseLeave={() => setHoveredSquare((s) => (s === index ? null : s))}
           />
         )
       })}
