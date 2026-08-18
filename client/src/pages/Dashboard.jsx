@@ -1251,10 +1251,10 @@ function GroupDiscoveryCard({ group, isJoined, isJoining, onJoin }) {
   return (
     <div
       className={`card border border-app-border rounded-2xl p-4 flex items-center gap-3.5 transition-colors duration-200 ${
-        isFull && !isJoined ? 'opacity-60' : 'hover:border-ucf-gold/25'
+        isFull && !isJoined ? 'opacity-60' : 'hover:border-ucf-gold/40 hover:bg-app-surface-raised group'
       }`}
     >
-      <div className="w-11 h-11 bg-ucf-gold/10 rounded-xl flex items-center justify-center shrink-0">
+      <div className="w-11 h-11 bg-ucf-gold/10 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-ucf-gold/15 transition-colors duration-200">
         {subjectPrefix ? (
           <span className="text-ucf-gold text-[11px] font-bold tracking-tight">{subjectPrefix}</span>
         ) : (
@@ -1425,7 +1425,7 @@ function DiscoveryTab() {
           {filtered.length > 0 ? (
             <motion.div className="space-y-2" initial="hidden" animate="visible" variants={dashStagger}>
               {filtered.map((g) => (
-                <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+                <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }} whileHover={{ x: 3 }}>
                   <GroupDiscoveryCard
                     group={g}
                     isJoined={myGroupIds.has(g.id)}
@@ -1453,7 +1453,7 @@ function DiscoveryTab() {
         <div>
           <motion.div className="space-y-2" initial="hidden" animate="visible" variants={dashStagger}>
             {recent.map((g) => (
-              <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+              <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }} whileHover={{ x: 3 }}>
                 <GroupDiscoveryCard
                   group={g}
                   isJoined={myGroupIds.has(g.id)}
@@ -1476,7 +1476,7 @@ function DiscoveryTab() {
               {showAll && (
                 <motion.div className="space-y-2 mt-2" initial="hidden" animate="visible" variants={dashStagger}>
                   {rest.map((g) => (
-                    <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}>
+                    <motion.div key={g.id} variants={dashFadeUp} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }} whileHover={{ x: 3 }}>
                       <GroupDiscoveryCard
                         group={g}
                         isJoined={myGroupIds.has(g.id)}
