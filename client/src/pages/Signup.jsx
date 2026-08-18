@@ -39,6 +39,13 @@ export default function Signup() {
   const [resendState, setResendState] = useState('idle') // 'idle' | 'sending' | 'sent'
   const [secondsLeft, setSecondsLeft] = useState(OTP_EXPIRY_SECONDS)
   const [loading, setLoading] = useState(false)
+  // Requires an explicit, affirmative checkbox rather than just linking the
+  // policies near the submit button — "by clicking Create Account you
+  // agree..." (browsewrap) is easy to skim past and weaker to point to
+  // later if it ever matters; an unchecked box that blocks submission
+  // (clickwrap) means every account actually clicked something that says
+  // "I agree" before it was created.
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
   const { signUp, verifySignupOtp, resendSignupOtp } = useAuth()
   const otpInputRefs = useRef([])
   const otpCode = otpDigits.join('')
@@ -109,6 +116,10 @@ export default function Signup() {
     }
     if (password !== confirmPassword) {
       setError('Passwords do not match.')
+      return
+    }
+    if (!agreedToTerms) {
+      setError('Please agree to the Terms of Service and Privacy Policy to continue.')
       return
     }
 
@@ -401,23 +412,31 @@ export default function Signup() {
             </div>
 
             <div className="pt-1">
+              <label className="flex items-start gap-2.5 mb-4 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 shrink-0 rounded border-app-border bg-app-input text-ucf-gold focus:ring-1 focus:ring-ucf-gold/50 focus:ring-offset-0 cursor-pointer"
+                />
+                <span className="text-xs text-gray-500 leading-relaxed">
+                  I agree to the{' '}
+                  <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-ucf-gold transition-colors duration-150 underline underline-offset-2">
+                    Terms of Service
+                  </Link>{' '}
+                  and{' '}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-ucf-gold transition-colors duration-150 underline underline-offset-2">
+                    Privacy Policy
+                  </Link>.
+                </span>
+              </label>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !agreedToTerms}
                 className="w-full bg-ucf-gold text-black font-bold py-2.5 rounded-xl hover:bg-yellow-400 transition-colors duration-200 disabled:opacity-60 disabled:cursor-not-allowed text-sm"
               >
                 {loading ? 'Creating account…' : 'Create Account'}
               </button>
-              <p className="text-center text-gray-600 text-xs mt-3 leading-relaxed">
-                By creating an account, you agree to our{' '}
-                <Link to="/terms" className="text-gray-500 hover:text-ucf-gold transition-colors duration-150 underline underline-offset-2">
-                  Terms of Service
-                </Link>{' '}
-                and{' '}
-                <Link to="/privacy" className="text-gray-500 hover:text-ucf-gold transition-colors duration-150 underline underline-offset-2">
-                  Privacy Policy
-                </Link>.
-              </p>
             </div>
           </form>
         </div>
