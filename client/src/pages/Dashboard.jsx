@@ -753,7 +753,7 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
         />
       )}
 
-      <HyperText as="h1" className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase" duration={600}>
+      <HyperText as="h1" className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase" duration={1500}>
         {`Good to see you, ${firstName}!`}
       </HyperText>
       <p className="text-sm text-gray-500 mb-6">Here's what's happening with your study groups.</p>

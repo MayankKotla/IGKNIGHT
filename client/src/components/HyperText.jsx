@@ -67,9 +67,7 @@ export default function HyperText({
   return (
     <Component className={className} {...props}>
       {displayText.map((letter, index) => (
-        <span key={index} className="font-mono">
-          {letter}
-        </span>
+        <span key={index}>{letter}</span>
       ))}
     </Component>
   )
