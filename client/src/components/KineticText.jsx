@@ -16,10 +16,19 @@ import React from 'react'
 //     per-letter "kinetic" bump.
 //   - Color is left to inherit (`currentColor`) from whatever wraps it, so
 //     it picks up the front layer's white/gold coloring automatically.
+//   - Uses flex-nowrap, not the original's flex-wrap. The parent <h1> here
+//     is absolutely positioned (inset: 0) inside a box sized by the resting
+//     (non-hovered) width of an invisible spacer copy — see
+//     ExtrudedHeadline. On hover, the per-letter padding/font-weight bump
+//     pushes the line wider than that box, and with flex-wrap on, the
+//     trailing letters would wrap onto a second line mid-hover. Since
+//     nothing here clips overflow, letting the line spill past its own box
+//     with nowrap instead just extends past the edge harmlessly, which
+//     reads as "the word breathes" instead of "the word breaks."
 export default function KineticText({ text, as: Tag = 'span', className = '' }) {
   return (
     <Tag
-      className={`inline-flex flex-wrap ${className}`}
+      className={`inline-flex flex-nowrap ${className}`}
       style={{
         '--hover-padding': 'calc(1em / 12)',
         '--text-stroke-width': 'calc(1em * 125 / 6000)',
