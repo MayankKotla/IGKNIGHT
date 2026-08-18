@@ -32,8 +32,25 @@ app.use(helmet({
   // fetch() responses even though CORS allows them.
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }))
+// CLIENT_URL supports a comma-separated list so multiple frontend origins
+// (e.g. the vercel.app URL and a custom domain, during/after a domain
+// migration) can both work at once, instead of a hard cutover. Each entry
+// is trimmed and has any trailing slash stripped — the `cors` package does
+// an exact string match, and a bare trailing-slash mismatch is exactly what
+// silently froze session creation earlier (Render's CLIENT_URL had a
+// trailing slash the actual browser origin never sends).
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim().replace(/\/$/, ''))
+  .filter(Boolean)
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin(origin, callback) {
+    // No Origin header (e.g. curl, server-to-server, some health checks) —
+    // allow it through; there's no browser same-origin policy to enforce.
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
+    callback(new Error('Not allowed by CORS'))
+  },
   credentials: true,
 }))
 app.use(express.json())
