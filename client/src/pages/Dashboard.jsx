@@ -1077,7 +1077,8 @@ function ProfileTab() {
             key={label}
             variants={dashFadeUp}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="card border border-app-border rounded-2xl p-6"
+            whileHover={{ y: -4 }}
+            className="card border border-app-border rounded-2xl p-6 hover:border-ucf-gold/30 transition-colors duration-200"
           >
             <div className="mb-4">
               <div className="w-9 h-9 bg-ucf-gold/10 rounded-xl flex items-center justify-center">
