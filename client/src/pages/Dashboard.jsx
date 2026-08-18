@@ -562,20 +562,9 @@ export default function Dashboard() {
   )
 }
 
-// Module-level (not component state) so it survives HomeTab unmounting and
-// remounting as the user switches tabs and back — the greeting header's
-// scramble-in effect should only ever play once per browser session, the
-// very first time the Home tab loads, not every time it's revisited.
-let hasPlayedHomeHeaderAnim = false
-
 function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const [animateHeader] = useState(() => {
-    const shouldAnimate = !hasPlayedHomeHeaderAnim
-    hasPlayedHomeHeaderAnim = true
-    return shouldAnimate
-  })
   const [stats, setStats] = useState({ groups: 0, sessionsThisWeek: 0, newMessages: 0 })
   const [groups, setGroups] = useState([])
   const [groupMeta, setGroupMeta] = useState({})
@@ -764,13 +753,9 @@ function HomeTab({ firstName, onGoToDiscover, onGoToKnightCheck }) {
         />
       )}
 
-      {animateHeader ? (
-        <HyperText as="h1" className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase" duration={600}>
-          {`Good to see you, ${firstName}!`}
-        </HyperText>
-      ) : (
-        <h1 className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase">Good to see you, {firstName}!</h1>
-      )}
+      <HyperText as="h1" className="text-2xl font-semibold tracking-tight mb-1 text-white uppercase" duration={600}>
+        {`Good to see you, ${firstName}!`}
+      </HyperText>
       <p className="text-sm text-gray-500 mb-6">Here's what's happening with your study groups.</p>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
