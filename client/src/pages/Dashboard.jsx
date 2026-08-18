@@ -9,6 +9,7 @@ import ScheduleSessionModal from '../components/ScheduleSessionModal'
 import EditNameModal from '../components/EditNameModal'
 import { normalizeForSearch } from '../lib/courseCode'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
+import { useNowTick } from '../hooks/useNowTick'
 
 const NAV = [
   { id: 'home', icon: BookOpen, label: 'Home' },
@@ -1304,6 +1305,11 @@ function SessionsTab({ viewMode, onViewModeChange }) {
   // arrive over realtime below (the INSERT payload is a bare row with no
   // joins, unlike the initial fetch's groups(id, name, courses(code))).
   const groupInfoRef = useRef({})
+  // Ticks every 30s so a session crossing its end_time (dropping out of
+  // "Upcoming") or start_time (relevant to the calendar's isPast styling
+  // below) updates on its own instead of needing a reload — see
+  // useNowTick's own comment for why a plain `new Date()` doesn't do this.
+  const now = useNowTick()
 
   useEffect(() => {
     if (!user) return
@@ -1388,7 +1394,6 @@ function SessionsTab({ viewMode, onViewModeChange }) {
   // study sessions across your groups"), so it filters the now-broader
   // `sessions` list back down — only the calendar view (below) uses the
   // full list, since that's the one that needs past sessions visible.
-  const now = new Date()
   const upcomingSessions = sessions.filter((s) => new Date(s.end_time) >= now)
 
   const sessionBuckets = {}

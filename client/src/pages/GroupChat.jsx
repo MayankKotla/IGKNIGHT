@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ScheduleSessionModal from '../components/ScheduleSessionModal'
 import { SkeletonBlock, SkeletonLine, SkeletonCircle } from '../components/Skeleton'
+import { useNowTick } from '../hooks/useNowTick'
 
 function formatTime(iso) {
   const d = new Date(iso)
@@ -107,6 +108,12 @@ export default function GroupChat() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
+  // Ticks every 30s so the Ongoing/Upcoming/Past session split below stays
+  // correct on its own — a plain `new Date()` computed only during render
+  // never updates unless something unrelated triggers a re-render, which
+  // is why a session sat in "Upcoming" past its actual start time until
+  // the page was reloaded.
+  const now = useNowTick()
 
   const [tab, setTab] = useState(location.state?.tab || 'chat')
   const [group, setGroup] = useState(null)
@@ -628,7 +635,6 @@ export default function GroupChat() {
   // avatar-grouping or "same day" purposes on the messages you do see.
   const visibleMessages = messages.filter((m) => !blockedUserIds.has(m.user_id))
   const contextMenuMsg = contextMenu ? messages.find((m) => m.id === contextMenu.msgId) : null
-  const now = new Date()
   // end_time is mandatory on every session (DB-enforced since migration
   // 020), so this is a clean three-way split: hasn't started yet, in
   // progress right now, or already ended. Previously, a session with no
