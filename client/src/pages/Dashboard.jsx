@@ -482,7 +482,7 @@ export default function Dashboard() {
             actual content. */}
         <div className="relative min-h-full flex flex-col overflow-hidden">
           <InteractiveGridPattern
-            className="z-0 inset-x-0 inset-y-[-40%] h-[180%] skew-y-12 [mask-image:linear-gradient(115deg,white_0%,white_12%,rgba(255,255,255,0.4)_25%,transparent_45%,transparent_55%,rgba(255,255,255,0.4)_75%,white_88%,white_100%)]"
+            className="z-0 inset-x-0 inset-y-[-40%] h-[180%] -skew-y-12 [mask-image:linear-gradient(115deg,white_0%,white_12%,rgba(255,255,255,0.4)_25%,transparent_45%,transparent_55%,rgba(255,255,255,0.4)_75%,white_88%,white_100%)]"
           />
         {(pendingQuiz || sessionReminder) && (
           <div className="relative z-10 sticky top-0 flex flex-col shrink-0">

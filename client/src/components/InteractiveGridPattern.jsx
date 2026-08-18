@@ -33,9 +33,24 @@ export default function InteractiveGridPattern({
     if (!el) return
     const measure = () => setSize({ w: el.offsetWidth, h: el.offsetHeight })
     measure()
-    const observer = new ResizeObserver(measure)
+
+    // Debounced: the sidebar's hover-expand animates the dashboard's main
+    // column width over ~200ms, which fires a burst of resize events on
+    // every intermediate frame. Recomputing the grid (which adds/removes
+    // whole squares) on each of those made hovering near the sidebar look
+    // like the background was stuttering/re-rendering mid-transition.
+    // Waiting for the resize to settle before redrawing fixes that.
+    let timeoutId = null
+    const observer = new ResizeObserver(() => {
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(measure, 200)
+    })
     observer.observe(el)
-    return () => observer.disconnect()
+
+    return () => {
+      observer.disconnect()
+      if (timeoutId) clearTimeout(timeoutId)
+    }
   }, [])
 
   // +1 row/column of overscan so the grid still fully covers the box's
