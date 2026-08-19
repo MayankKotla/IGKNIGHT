@@ -475,15 +475,21 @@ export default function Dashboard() {
             main's own box (rather than this, its actual scrollable content)
             made it stop partway down any tab taller than ~2 screens, which
             both cut the background short and killed hover past that point
-            (there was simply no SVG there to hover). overflow-hidden here
-            (not on `main`, which still needs to scroll) clips the pattern's
-            own oversize+skew overhang to this wrapper's real bounds, so
-            that overhang doesn't add extra empty scrollable space below the
-            actual content. */}
-        <div className="relative min-h-full flex flex-col overflow-hidden">
-          <InteractiveGridPattern
-            className="z-0 inset-x-0 inset-y-[-40%] h-[180%] -skew-y-[8deg] [mask-image:linear-gradient(115deg,white_0%,white_12%,rgba(255,255,255,0.4)_25%,transparent_45%,transparent_55%,rgba(255,255,255,0.4)_75%,white_88%,white_100%)]"
-          />
+            (there was simply no SVG there to hover).
+            overflow-hidden must NOT go on this wrapper itself — it holds
+            the right rail's `sticky` KnightCheck/Next Up cards further
+            down, and an overflow-hidden ancestor breaks position: sticky
+            for its descendants (it did exactly that here once). Instead
+            the clipping — needed to contain the grid pattern's own
+            oversize+skew overhang so it doesn't add extra empty scrollable
+            space below the actual content — is scoped to a dedicated layer
+            around just the pattern. */}
+        <div className="relative min-h-full flex flex-col">
+          <div className="absolute inset-0 overflow-hidden">
+            <InteractiveGridPattern
+              className="z-0 inset-x-0 inset-y-[-40%] h-[180%] -skew-y-[8deg] [mask-image:linear-gradient(115deg,white_0%,white_12%,rgba(255,255,255,0.4)_25%,transparent_45%,transparent_55%,rgba(255,255,255,0.4)_75%,white_88%,white_100%)]"
+            />
+          </div>
         {(pendingQuiz || sessionReminder) && (
           <div className="relative z-10 sticky top-0 flex flex-col shrink-0">
             {pendingQuiz && (
